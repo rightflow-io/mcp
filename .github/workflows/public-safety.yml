@@ -1,0 +1,66 @@
+name: Public safety
+
+# This repository is public. Its files, its commits and every pull request's title
+# and description pass scripts/check-public-safety.mjs before the rest of the world
+# reads them. The rule the scanner enforces is CLAUDE.md, "What belongs here and
+# what never does".
+
+on:
+  push:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-safety-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  files:
+    name: files
+    # An edited description changes no file.
+    if: github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+      - name: Scanner tests
+        run: node --test 'scripts/*.test.mjs'
+      - name: Scan the tree
+        run: node scripts/check-public-safety.mjs
+
+  pull-request:
+    name: commits and description
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+      - name: Commit messages and identities
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-public-safety.mjs --commits "$BASE_SHA..$HEAD_SHA"
+      # Title and body reach the shell through the environment, never through
+      # ${{ }} inside the script: a description is untrusted text, and template
+      # expansion would let it run as a command.
+      - name: Title and description
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/pull-request.txt"
+          node scripts/check-public-safety.mjs --text "$RUNNER_TEMP/pull-request.txt"

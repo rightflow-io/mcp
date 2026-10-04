@@ -1,0 +1,22 @@
+# Dependencies and build output (a plugin's dist/ is committed on purpose; see CLAUDE.md)
+node_modules/
+coverage/
+*.tsbuildinfo
+
+# Never tracked: secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+
+# A pulled team's local state names the firm and the team
+__rightflow__/
+
+# Local tooling
+.DS_Store
+*.log
+.claude/settings.local.json

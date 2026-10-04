@@ -1,0 +1,25 @@
+name: An idea
+description: Something the plugin should do, or do differently.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This issue is public.** Describe the need in general terms, without naming your firm, people or cases.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to do
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What gets in the way today
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Public safety
+      options:
+        - label: This issue contains no personal data, no firm or case details and no credentials.
+          required: true

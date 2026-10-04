@@ -1,0 +1,238 @@
+name: Linear ticket
+
+# Every change needs a Linear ticket — in the daemon Dev team (DAE-…), or in
+# daemon Support (DAESUP-…) when it arrived as a customer report. One job carries
+# both halves of that rule, so they cannot drift apart:
+#
+#   * On every pull request event except the close, it fails the pull request when
+#     neither title, description nor branch name names a ticket. That is the check
+#     to make required in branch protection.
+#   * On the merge, it posts the pull request description onto the same ticket, so
+#     the ticket carries what actually shipped without anyone copying it across.
+#
+# The same logic as the linear-ticket workflow of the daemon repositories, with
+# three differences that follow from this repository being public: the action is
+# pinned by commit, a reference is the identifier alone (a tracker URL is refused
+# by the public-safety check), and dependency bumps by Dependabot are exempt —
+# they are no person's change and carry no ticket.
+#
+# The script is inline rather than a file in the repository: a `pull_request`
+# workflow always runs the pull request's own copy of this file, so a checked-out
+# helper would be no more trustworthy than what is written here.
+#
+# Secret: LINEAR_API_KEY — a Linear API key with write access to the daemon teams.
+# Pull requests from forks never see it, so for them the check falls back to the
+# pattern alone and nothing is posted on merge.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Linear team keys a ticket may live in. Space-separated — add a key here rather
+  # than teaching the pattern below about a new team.
+  TICKET_KEYS: DAE DAESUP
+
+jobs:
+  ticket:
+    name: ticket linked
+    # A pull request closed without merging has nothing to check and nothing to post.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      (github.event.action != 'closed' || github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      # Merge runs and check runs never queue behind each other; neither is
+      # cancelled, so a later run never reports before an earlier one.
+      group: linear-ticket-${{ github.event.pull_request.number }}-${{ github.event.action == 'closed' }}
+      cancel-in-progress: false
+    steps:
+      - name: A ticket is named — and on merge, it hears about it
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        with:
+          script: |
+            const ENDPOINT = 'https://api.linear.app/graphql';
+            const apiKey = process.env.LINEAR_API_KEY;
+            const pr = context.payload.pull_request;
+            const merged = context.payload.action === 'closed';
+
+            /** One GraphQL round trip. Throws with Linear's own message on failure. */
+            async function graphql(query, variables) {
+              const res = await fetch(ENDPOINT, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: apiKey },
+                body: JSON.stringify({ query, variables }),
+              });
+              const text = await res.text();
+              if (!res.ok) throw new Error(`Linear API returned ${res.status}: ${text.slice(0, 500)}`);
+              const json = JSON.parse(text);
+              if (json.errors) {
+                throw new Error(`Linear API error: ${json.errors.map((e) => e.message).join('; ')}`);
+              }
+              return json.data;
+            }
+
+            // Looked up by team key + number rather than by passing the identifier
+            // as an id: the filter is the documented shape, and it also proves the
+            // ticket sits in a team we accept.
+            async function resolveIssues(identifiers) {
+              const resolved = [];
+              const missing = [];
+              for (const identifier of identifiers) {
+                const [team, number] = identifier.split('-');
+                const data = await graphql(
+                  `query IssueByIdentifier($team: String!, $number: Float!) {
+                     issues(filter: { team: { key: { eq: $team } }, number: { eq: $number } }, first: 1) {
+                       nodes { id identifier title url }
+                     }
+                   }`,
+                  { team, number: Number(number) },
+                );
+                const issue = data.issues.nodes[0];
+                if (issue) resolved.push(issue);
+                else missing.push(identifier);
+              }
+              return { resolved, missing };
+            }
+
+            /** True when some comment on the issue already contains `marker`. */
+            async function hasComment(issueId, marker) {
+              let after = null;
+              for (;;) {
+                const data = await graphql(
+                  `query IssueComments($id: String!, $after: String) {
+                     issue(id: $id) {
+                       comments(first: 100, after: $after) {
+                         nodes { body }
+                         pageInfo { hasNextPage endCursor }
+                       }
+                     }
+                   }`,
+                  { id: issueId, after },
+                );
+                const { nodes, pageInfo } = data.issue.comments;
+                if (nodes.some((c) => (c.body || '').includes(marker))) return true;
+                if (!pageInfo.hasNextPage) return false;
+                after = pageInfo.endCursor;
+              }
+            }
+
+            async function addComment(issueId, body) {
+              const data = await graphql(
+                `mutation AddComment($issueId: String!, $body: String!) {
+                   commentCreate(input: { issueId: $issueId, body: $body }) { success }
+                 }`,
+                { issueId, body },
+              );
+              if (!data.commentCreate.success) throw new Error('Linear refused the comment.');
+            }
+
+            const keys = (process.env.TICKET_KEYS || '')
+              .split(/\s+/)
+              .filter(Boolean)
+              // Longest key first: the alternation must try DAESUP before DAE, or
+              // DAESUP-77 reads as a DAE that never matches.
+              .sort((a, b) => b.length - a.length);
+            const sources = {
+              title: pr.title || '',
+              description: pr.body || '',
+              'branch name': pr.head.ref || '',
+            };
+            const pattern = new RegExp(`\\b(${keys.join('|')})-(\\d+)\\b`, 'gi');
+            const found = new Map(); // identifier -> where it was named
+            for (const [where, text] of Object.entries(sources)) {
+              for (const m of text.matchAll(pattern)) {
+                const id = `${m[1].toUpperCase()}-${m[2]}`;
+                if (!found.has(id)) found.set(id, where);
+              }
+            }
+
+            if (found.size === 0) {
+              const complaint =
+                `No Linear ticket referenced. Name one — ${keys.join('-<number>, ')}-<number> — in ` +
+                'the PR title, the PR description or the branch name — the identifier only, this ' +
+                'repository is public. ' +
+                'No ticket yet? Create one in the daemon Dev team first: every change needs one ' +
+                '(CLAUDE.md, "Commits and pull requests").';
+              // Merged already: too late to block, but say so in the run.
+              if (merged) core.warning(complaint);
+              else core.setFailed(complaint);
+              return;
+            }
+
+            if (!apiKey) {
+              const complaint =
+                'LINEAR_API_KEY is not set. Add the secret (a Linear API key with write access to ' +
+                'the daemon teams) in the repository settings.';
+              if (merged) {
+                // Nothing else can happen on a merge without the key — fail loudly
+                // rather than drop the description silently.
+                core.setFailed(`${complaint} The merged PR description cannot reach its ticket.`);
+              } else {
+                core.warning(
+                  `${complaint} Until then the reference is accepted without checking that the ` +
+                    'ticket exists, so a typo in the number passes this check.',
+                );
+                core.summary.addRaw(`Referenced (unverified): ${[...found.keys()].join(', ')}`);
+                await core.summary.write();
+              }
+              return;
+            }
+
+            const { resolved, missing } = await resolveIssues([...found.keys()]);
+            for (const id of missing) {
+              core.warning(`${id} is referenced but does not exist in Linear.`);
+            }
+            if (resolved.length === 0) {
+              const complaint =
+                `Referenced ${missing.join(', ')}, but no such ticket exists in Linear. Check the ` +
+                'number, or create the ticket in the daemon Dev team.';
+              if (merged) core.warning(complaint);
+              else core.setFailed(complaint);
+              return;
+            }
+
+            if (!merged) {
+              for (const issue of resolved) {
+                core.notice(`${issue.identifier} — ${issue.title} (from the ${found.get(issue.identifier)})`);
+              }
+              core.summary.addRaw(
+                resolved.map((i) => `- [${i.identifier}](${i.url}) — ${i.title}`).join('\n'),
+              );
+              await core.summary.write();
+              return;
+            }
+
+            // Linear comments have no length limit worth relying on, and a ticket is
+            // not the place to mirror a thousand-line description — link out instead.
+            const MAX_DESCRIPTION = 40000;
+            const text = (pr.body || '').trim();
+            const description =
+              text.length > MAX_DESCRIPTION
+                ? `${text.slice(0, MAX_DESCRIPTION)}\n\n…cut off here — the rest is on the pull request.`
+                : text || '_The pull request had no description._';
+            const by = pr.merged_by && pr.merged_by.login ? ` by @${pr.merged_by.login}` : '';
+            const body = [
+              `**Merged into \`${pr.base.ref}\`${by}: ` +
+                `[${context.repo.owner}/${context.repo.repo}#${pr.number}](${pr.html_url}) — ${pr.title}**`,
+              '',
+              description,
+            ].join('\n');
+
+            for (const issue of resolved) {
+              // The PR link sits in the comment's first line, so a re-run of this
+              // workflow recognises its own earlier comment and stays quiet.
+              if (await hasComment(issue.id, pr.html_url)) {
+                core.notice(`${issue.identifier} already carries this PR — not posting twice.`);
+                continue;
+              }
+              await addComment(issue.id, body);
+              core.notice(`Posted the PR description to ${issue.identifier} (${issue.url}).`);
+            }
