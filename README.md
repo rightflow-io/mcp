@@ -35,6 +35,10 @@ In Claude Code:
 
 What you may change is decided by rightflow's servers, not by the plugin.
 
+## License
+
+[Apache-2.0](LICENSE).
+
 ## Security
 
 See [SECURITY.md](SECURITY.md). Please report vulnerabilities privately.

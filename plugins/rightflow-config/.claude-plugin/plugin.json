@@ -8,13 +8,21 @@
   },
   "homepage": "https://github.com/rightflow-io/mcp",
   "repository": "https://github.com/rightflow-io/mcp",
-  "keywords": ["rightflow", "agent team", "configuration"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "rightflow",
+    "agent team",
+    "configuration"
+  ],
   "userConfig": {
     "environment": {
       "type": "string",
       "title": "rightflow environment",
       "description": "Which rightflow the plugin signs in to. Production unless rightflow asked you to use development.",
-      "options": ["production", "development"],
+      "options": [
+        "production",
+        "development"
+      ],
       "default": "production"
     }
   }

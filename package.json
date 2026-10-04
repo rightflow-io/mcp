@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "description": "Claude Code plugins for rightflow. The built plugins live under plugins/; their source under src/.",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.18"
   },
