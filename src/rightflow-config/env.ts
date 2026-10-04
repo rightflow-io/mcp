@@ -1,0 +1,70 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+export type EnvironmentName = "production" | "development";
+
+export interface Environment {
+  name: EnvironmentName;
+  label: string;
+  /** Base URL of the rightflow API, including its `/api` prefix. */
+  apiUrl: string;
+  /** Base URL of the sign-in service (OpenID Connect issuer without `/oidc`). */
+  authUrl: string;
+  /**
+   * Public client id of the native sign-in app registered for this plugin. Public
+   * by design: a program on a person's laptop cannot keep a secret, which is why
+   * the sign-in uses PKCE. `null` until the app is registered for this environment.
+   */
+  clientId: string | null;
+  /** True when a development override replaced one of the values above. */
+  overridden: boolean;
+}
+
+const ENVIRONMENTS: Record<EnvironmentName, Omit<Environment, "overridden">> = {
+  production: {
+    name: "production",
+    label: "Production",
+    apiUrl: "https://api.rightflow.one/api",
+    authUrl: "https://auth.rightflow.one",
+    clientId: null,
+  },
+  development: {
+    name: "development",
+    label: "Development",
+    apiUrl: "https://api.dev.rightflow.one/api",
+    authUrl: "https://auth.dev.rightflow.one",
+    clientId: null,
+  },
+};
+
+/**
+ * Picks the environment from the plugin's `environment` option. An empty or
+ * unknown value is refused rather than defaulted: signing in to the wrong
+ * rightflow is exactly the mistake a silent default would make.
+ */
+export function resolveEnvironment(env: NodeJS.ProcessEnv = process.env): Environment {
+  const raw = (env.RF_CONFIG_ENV ?? "").trim();
+  const name = raw === "" ? "production" : raw;
+  if (name !== "production" && name !== "development") {
+    throw new Error(`Unknown rightflow environment "${raw}". Choose production or development in /config.`);
+  }
+  const base = ENVIRONMENTS[name];
+  // For people working on the plugin against a rightflow running on their own
+  // machine. Never set by the plugin's own configuration.
+  const apiUrl = env.RF_CONFIG_API_URL?.trim() || base.apiUrl;
+  const authUrl = env.RF_CONFIG_AUTH_URL?.trim() || base.authUrl;
+  const clientId = env.RF_CONFIG_CLIENT_ID?.trim() || base.clientId;
+  return {
+    ...base,
+    apiUrl: apiUrl.replace(/\/+$/, ""),
+    authUrl: authUrl.replace(/\/+$/, ""),
+    clientId,
+    overridden: apiUrl !== base.apiUrl || authUrl !== base.authUrl || clientId !== base.clientId,
+  };
+}
+
+/** The plugin's own data folder, which survives updates and is removed on uninstall. */
+export function dataDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const fromPlugin = env.RF_CONFIG_DATA?.trim();
+  return fromPlugin ? fromPlugin : join(homedir(), ".rightflow-config");
+}

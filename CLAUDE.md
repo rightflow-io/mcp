@@ -181,11 +181,14 @@ them years from now.
 ## Gate before you push
 
 ```bash
-node scripts/check-public-safety.mjs   # whole tree
-node --test 'scripts/*.test.mjs'       # the scanner's own tests
+npm ci                 # once
+npm run validate       # type check, tests, build of dist/, public-safety scan
 ```
 
-The plugin adds its own build and test commands here when it lands.
+CI also checks that the committed `dist/` is exactly what the source builds to,
+and validates the plugin and marketplace manifests with `claude plugin validate
+--strict`. Change a dependency or the source, and commit the rebuilt `dist/` in
+the same change.
 
 ## Closing a ticket
 

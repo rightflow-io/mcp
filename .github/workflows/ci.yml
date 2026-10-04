@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      # dist/ is what a firm's machine runs. It must be exactly what this source
+      # builds to, so a reviewer who reads the source has read what ships.
+      - name: Built bundle matches the source
+        run: |
+          npm run build
+          git diff --exit-code -- plugins/*/dist || {
+            echo "::error::plugins/*/dist is out of date. Run npm run build and commit the result."
+            exit 1
+          }
+      - name: Plugin and marketplace manifests
+        run: |
+          npx --yes @anthropic-ai/claude-code@2.1.289 plugin validate --strict plugins/rightflow-config
+          npx --yes @anthropic-ai/claude-code@2.1.289 plugin validate --strict .
