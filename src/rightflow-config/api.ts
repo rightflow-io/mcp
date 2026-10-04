@@ -2,6 +2,9 @@ import type { Fetch } from "./auth/oidc.ts";
 import type { Session } from "./auth/session.ts";
 import { UserFacingError } from "./errors.ts";
 
+/** Long enough for a whole bundle to be checked and stored, short enough that a hung call ends. */
+const API_TIMEOUT_MS = 60_000;
+
 export interface ApiResponse<T> {
   status: number;
   body: T;
@@ -35,6 +38,7 @@ export class Api {
   private async send<T>(method: string, path: string, token: string, body?: unknown): Promise<ApiResponse<T>> {
     const env = this.session.env;
     let res: Response;
+    let text: string;
     try {
       res = await this.fetchImpl(`${env.apiUrl}${path}`, {
         method,
@@ -44,11 +48,12 @@ export class Api {
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
       });
+      text = await res.text();
     } catch {
       throw new UserFacingError(`Could not reach rightflow ${env.label} (${env.apiUrl}). Check the connection and try again.`);
     }
-    const text = await res.text();
     const parsed = parseJson(text);
     if (res.status === 401) {
       throw new UserFacingError(`rightflow ${env.label} no longer accepts this sign-in. Call sign_in.`);

@@ -30,14 +30,16 @@ jobs:
       - name: Tests
         run: npm test
       # dist/ is what a firm's machine runs. It must be exactly what this source
-      # builds to, so a reviewer who reads the source has read what ships.
+      # builds to, so a reviewer who reads the source has read what ships. Status
+      # rather than diff, so a file the build newly emits counts too.
       - name: Built bundle matches the source
         run: |
           npm run build
-          git diff --exit-code -- plugins/*/dist || {
+          if [ -n "$(git status --porcelain -- plugins/*/dist)" ]; then
             echo "::error::plugins/*/dist is out of date. Run npm run build and commit the result."
+            git status --porcelain -- plugins/*/dist
             exit 1
-          }
+          fi
       - name: Plugin and marketplace manifests
         run: |
           npx --yes @anthropic-ai/claude-code@2.1.289 plugin validate --strict plugins/rightflow-config

@@ -36551,11 +36551,12 @@ var UserFacingError = class extends Error {
 };
 
 // src/rightflow-config/api.ts
+var API_TIMEOUT_MS = 6e4;
 var Api = class {
   session;
   fetchImpl;
-  constructor(session2, fetchImpl = fetch) {
-    this.session = session2;
+  constructor(session, fetchImpl = fetch) {
+    this.session = session;
     this.fetchImpl = fetchImpl;
   }
   /** A request as the selected firm. */
@@ -36570,6 +36571,7 @@ var Api = class {
   async send(method, path, token, body) {
     const env2 = this.session.env;
     let res;
+    let text;
     try {
       res = await this.fetchImpl(`${env2.apiUrl}${path}`, {
         method,
@@ -36578,12 +36580,13 @@ var Api = class {
           accept: "application/json",
           ...body === void 0 ? {} : { "content-type": "application/json" }
         },
-        ...body === void 0 ? {} : { body: JSON.stringify(body) }
+        ...body === void 0 ? {} : { body: JSON.stringify(body) },
+        signal: AbortSignal.timeout(API_TIMEOUT_MS)
       });
+      text = await res.text();
     } catch {
       throw new UserFacingError(`Could not reach rightflow ${env2.label} (${env2.apiUrl}). Check the connection and try again.`);
     }
-    const text = await res.text();
     const parsed = parseJson(text);
     if (res.status === 401) {
       throw new UserFacingError(`rightflow ${env2.label} no longer accepts this sign-in. Call sign_in.`);
@@ -36644,20 +36647,21 @@ function listen(port, expectedState, timeoutMs) {
         res.writeHead(404).end();
         return;
       }
+      if (url2.searchParams.get("state") !== expectedState) {
+        respond(res, 400, "This answer does not belong to the sign-in in progress.");
+        return;
+      }
       const error62 = url2.searchParams.get("error");
-      const state = url2.searchParams.get("state");
       const received = url2.searchParams.get("code");
       let outcome;
       if (error62) outcome = { ok: false, message: `The sign-in was not completed (${error62}).` };
-      else if (state !== expectedState) outcome = { ok: false, message: "The sign-in answer did not belong to this request." };
       else if (!received) outcome = { ok: false, message: "The sign-in answer carried no code." };
       else outcome = { ok: true, code: received };
-      res.writeHead(outcome.ok ? 200 : 400, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "content-security-policy": "default-src 'none'"
-      });
-      res.end(page(outcome.ok ? "Signed in. You can close this window and return to Claude." : outcome.message));
+      respond(
+        res,
+        outcome.ok ? 200 : 400,
+        outcome.ok ? "Signed in. You can close this window and return to Claude." : outcome.message
+      );
       if (timer) clearTimeout(timer);
       server2.close();
       if (outcome.ok) settle2.resolve(outcome.code);
@@ -36667,7 +36671,9 @@ function listen(port, expectedState, timeoutMs) {
     server2.listen(port, "127.0.0.1", () => {
       timer = setTimeout(() => {
         server2.close();
-        settle2.reject(new UserFacingError("No sign-in arrived within five minutes. Call sign_in to try again."));
+        settle2.reject(
+          new UserFacingError(`No sign-in arrived within ${Math.round(timeoutMs / 6e4)} minutes. Call sign_in to try again.`)
+        );
       }, timeoutMs);
       timer.unref();
       resolveReady({
@@ -36681,8 +36687,13 @@ function listen(port, expectedState, timeoutMs) {
     });
   });
 }
-function page(message) {
-  return `<!doctype html><meta charset="utf-8"><title>rightflow</title><p>${escapeHtml(message)}</p>`;
+function respond(res, status, message) {
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'"
+  });
+  res.end(`<!doctype html><meta charset="utf-8"><title>rightflow</title><p>${escapeHtml(message)}</p>`);
 }
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -36691,6 +36702,7 @@ function escapeHtml(s) {
 // src/rightflow-config/auth/oidc.ts
 var SCOPE = "openid profile email offline_access urn:logto:scope:organizations";
 var ORGANIZATIONS_RESOURCE = "urn:logto:resource:organizations";
+var TOKEN_REQUEST_TIMEOUT_MS = 15e3;
 function requireClientId(env2) {
   if (!env2.clientId) {
     throw new UserFacingError(
@@ -36744,7 +36756,8 @@ async function revokeRefreshToken(env2, refreshToken, fetchImpl = fetch) {
     const res = await fetchImpl(`${env2.authUrl}/oidc/token/revocation`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ token: refreshToken, token_type_hint: "refresh_token", client_id: env2.clientId })
+      body: new URLSearchParams({ token: refreshToken, token_type_hint: "refresh_token", client_id: env2.clientId }),
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS)
     });
     return res.ok;
   } catch {
@@ -36752,12 +36765,19 @@ async function revokeRefreshToken(env2, refreshToken, fetchImpl = fetch) {
   }
 }
 async function tokenRequest(env2, body, fetchImpl) {
-  const res = await fetchImpl(`${env2.authUrl}/oidc/token`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(body)
-  });
-  const text = await res.text();
+  let res;
+  let text;
+  try {
+    res = await fetchImpl(`${env2.authUrl}/oidc/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(body),
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS)
+    });
+    text = await res.text();
+  } catch {
+    throw new UserFacingError(`Could not reach the ${env2.label} sign-in service (${env2.authUrl}). Check the connection and try again.`);
+  }
   if (!res.ok) {
     const code = safeErrorCode(text);
     if (code === "invalid_grant") {
@@ -36765,7 +36785,7 @@ async function tokenRequest(env2, body, fetchImpl) {
     }
     throw new UserFacingError(`The ${env2.label} sign-in service refused the request (${res.status}${code ? `, ${code}` : ""}).`);
   }
-  const json2 = JSON.parse(text);
+  const json2 = parseOrNull(text);
   if (typeof json2 !== "object" || json2 === null) throw new Error("Malformed token response.");
   const t = json2;
   if (typeof t.access_token !== "string" || typeof t.expires_in !== "number") {
@@ -36783,19 +36803,23 @@ async function tokenRequest(env2, body, fetchImpl) {
   };
 }
 function safeErrorCode(text) {
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null && "error" in parsed && typeof parsed.error === "string") {
-      return /^[a-z_]{1,64}$/.test(parsed.error) ? parsed.error : null;
-    }
-  } catch {
+  const parsed = parseOrNull(text);
+  if (typeof parsed === "object" && parsed !== null && "error" in parsed && typeof parsed.error === "string") {
+    return /^[a-z_]{1,64}$/.test(parsed.error) ? parsed.error : null;
   }
   return null;
+}
+function parseOrNull(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 function organizationIdsFromIdToken(idToken) {
   const payload = idToken.split(".")[1];
   if (!payload) return [];
-  const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  const claims = parseOrNull(Buffer.from(payload, "base64url").toString("utf8"));
   if (typeof claims !== "object" || claims === null || !("organizations" in claims)) return [];
   const orgs = claims.organizations;
   return Array.isArray(orgs) ? orgs.filter((o) => typeof o === "string") : [];
@@ -36857,29 +36881,29 @@ var Session = class {
     if (organizationIds.length === 0) {
       throw new UserFacingError(`This login does not belong to any firm in ${this.env.label}.`);
     }
-    const session2 = {
+    const session = {
       version: 1,
       refreshToken: tokens.refreshToken,
       organizationIds,
       signedInAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    await this.store.write(session2);
-    return session2;
+    await this.store.write(session);
+    return session;
   }
   /** Selects one of the login's firms and fetches its token. */
   async selectFirm(organizationId, organizationName) {
     return this.store.withLock(async () => {
-      const session2 = await this.requireLogin();
-      if (!session2.organizationIds.includes(organizationId)) {
+      const session = await this.requireLogin();
+      if (!session.organizationIds.includes(organizationId)) {
         throw new UserFacingError("This login does not belong to that firm.");
       }
       const tokens = await organizationToken(
         this.env,
-        { refreshToken: session2.refreshToken, organizationId },
+        { refreshToken: session.refreshToken, organizationId },
         this.fetchImpl
       );
       const next = {
-        ...session2,
+        ...session,
         refreshToken: tokens.refreshToken,
         accessToken: tokens.accessToken,
         accessTokenExpiresAt: tokens.expiresAt,
@@ -36897,13 +36921,13 @@ var Session = class {
    */
   async probeToken(organizationId) {
     return this.store.withLock(async () => {
-      const session2 = await this.requireLogin();
+      const session = await this.requireLogin();
       const tokens = await organizationToken(
         this.env,
-        { refreshToken: session2.refreshToken, organizationId },
+        { refreshToken: session.refreshToken, organizationId },
         this.fetchImpl
       );
-      await this.store.write({ ...session2, refreshToken: tokens.refreshToken });
+      await this.store.write({ ...session, refreshToken: tokens.refreshToken });
       return tokens.accessToken;
     });
   }
@@ -36913,16 +36937,16 @@ var Session = class {
     const before = await this.store.read();
     if (before && fresh(before)) return withFirm(before);
     return this.store.withLock(async () => {
-      const session2 = await this.requireLogin();
-      if (fresh(session2)) return withFirm(session2);
-      if (!session2.organizationId) throw noFirm(this.env);
+      const session = await this.requireLogin();
+      if (fresh(session)) return withFirm(session);
+      if (!session.organizationId) throw noFirm(this.env);
       const tokens = await organizationToken(
         this.env,
-        { refreshToken: session2.refreshToken, organizationId: session2.organizationId },
+        { refreshToken: session.refreshToken, organizationId: session.organizationId },
         this.fetchImpl
       );
       const next = {
-        ...session2,
+        ...session,
         refreshToken: tokens.refreshToken,
         accessToken: tokens.accessToken,
         accessTokenExpiresAt: tokens.expiresAt
@@ -36933,25 +36957,29 @@ var Session = class {
   }
   /** Deletes the saved login and asks the sign-in service to revoke it. Returns whether the revocation was confirmed. */
   async signOut() {
-    const session2 = await this.store.read();
-    await this.store.clear();
-    return session2 ? revokeRefreshToken(this.env, session2.refreshToken, this.fetchImpl) : true;
+    const session = await this.store.withLock(async () => {
+      const saved = await this.store.read().catch(() => null);
+      await this.store.clear();
+      return saved;
+    });
+    return session ? revokeRefreshToken(this.env, session.refreshToken, this.fetchImpl) : true;
   }
   async requireLogin() {
-    const session2 = await this.store.read();
-    if (!session2) throw new UserFacingError(`Not signed in to ${this.env.label}. Call sign_in.`);
-    return session2;
+    const session = await this.store.read();
+    if (!session) throw new UserFacingError(`Not signed in to ${this.env.label}. Call sign_in.`);
+    return session;
   }
 };
-function withFirm(session2) {
-  if (!session2.accessToken || !session2.organizationId) throw new Error("No firm token.");
-  return { token: session2.accessToken, session: { ...session2, organizationId: session2.organizationId } };
+function withFirm(session) {
+  if (!session.accessToken || !session.organizationId) throw new Error("No firm token.");
+  return { token: session.accessToken, session: { ...session, organizationId: session.organizationId } };
 }
 function noFirm(env2) {
   return new UserFacingError(`Signed in to ${env2.label}, but no firm is selected. Call use_firm.`);
 }
 
 // src/rightflow-config/auth/store.ts
+import { randomUUID } from "node:crypto";
 import { mkdir, open as open2, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 var SessionStore = class {
@@ -36972,17 +37000,22 @@ var SessionStore = class {
       if (isNotFound(err)) return null;
       throw err;
     }
-    const parsed = JSON.parse(raw);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
     if (!isStoredSession(parsed)) {
       throw new Error(`The saved sign-in at ${this.path} is not in a format this plugin understands. Sign out and in again.`);
     }
     return parsed;
   }
   /** Writes atomically with mode 0600, so a crash never leaves half a file and nobody else can read it. */
-  async write(session2) {
+  async write(session) {
     await mkdir(this.directory, { recursive: true, mode: 448 });
-    const tmp = `${this.path}.${process.pid}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(session2, null, 2)}
+    const tmp = `${this.path}.${randomUUID()}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(session, null, 2)}
 `, { mode: 384 });
     await rename(tmp, this.path);
   }
@@ -36998,11 +37031,16 @@ var SessionStore = class {
   async withLock(fn, timeoutMs = 1e4) {
     await mkdir(this.directory, { recursive: true, mode: 448 });
     const lockPath = `${this.path}.lock`;
+    const owner = randomUUID();
     const deadline = Date.now() + timeoutMs;
     for (; ; ) {
       try {
         const handle = await open2(lockPath, "wx", 384);
-        await handle.close();
+        try {
+          await handle.writeFile(owner);
+        } finally {
+          await handle.close();
+        }
         break;
       } catch (err) {
         if (!isExists(err)) throw err;
@@ -37019,7 +37057,9 @@ var SessionStore = class {
     try {
       return await fn();
     } finally {
-      await rm(lockPath, { force: true });
+      if (await readFile(lockPath, "utf8").catch(() => null) === owner) {
+        await rm(lockPath, { force: true });
+      }
     }
   }
 };
@@ -37088,8 +37128,8 @@ function dataDirectory(env2 = process.env) {
 // src/rightflow-config/me.ts
 var SETUP_PERMISSION = "tenant:settings:write";
 var SETUP_MODULE = "custom_teams";
-async function fetchMe(api2, token) {
-  const res = token ? await api2.requestWithToken("GET", "/auth/me", token) : await api2.request("GET", "/auth/me");
+async function fetchMe(api, token) {
+  const res = token ? await api.requestWithToken("GET", "/auth/me", token) : await api.request("GET", "/auth/me");
   if (res.status !== 200 || typeof res.body !== "object" || res.body === null) {
     throw new Error(`Unexpected answer from /auth/me (${res.status}).`);
   }
@@ -37125,11 +37165,15 @@ ${out.text}` }] };
 ${err.message}` }] };
     }
     console.error(err);
-    const message = err instanceof Error ? err.message : String(err);
     return {
       isError: true,
-      content: [{ type: "text", text: `${header(env2)}
-Something went wrong inside the plugin: ${message}` }]
+      content: [
+        {
+          type: "text",
+          text: `${header(env2)}
+Something went wrong inside the plugin. The details are in the rightflow-config MCP server log (/mcp in Claude Code).`
+        }
+      ]
     };
   }
 }
@@ -37137,8 +37181,8 @@ Something went wrong inside the plugin: ${message}` }]
 // src/rightflow-config/tools/session-tools.ts
 var MIN_NODE = [22, 18];
 function registerSessionTools(server2, ctx) {
-  const { session: session2, api: api2 } = ctx;
-  const env2 = session2.env;
+  const { session, api } = ctx;
+  const env2 = session.env;
   let pending = null;
   server2.registerTool(
     "status",
@@ -37150,7 +37194,7 @@ function registerSessionTools(server2, ctx) {
     },
     () => run(env2, async () => {
       const lines = [`Plugin version ${ctx.version}. ${nodeCheck()}`];
-      const saved = await session2.current();
+      const saved = await session.current();
       if (!saved) {
         return { firm: null, text: [...lines, `Not signed in to ${env2.label}. Call sign_in.`].join("\n") };
       }
@@ -37160,7 +37204,7 @@ function registerSessionTools(server2, ctx) {
           text: [...lines, `Signed in to ${env2.label}, but no firm is selected. Call use_firm.`].join("\n")
         };
       }
-      const me = await fetchMe(api2);
+      const me = await fetchMe(api);
       const firm = me.activeOrganization ?? { name: saved.organizationName ?? saved.organizationId };
       return { firm, text: [...lines, ...describeAccess(me)].join("\n") };
     })
@@ -37176,30 +37220,12 @@ function registerSessionTools(server2, ctx) {
       annotations: { openWorldHint: true }
     },
     ({ firm }) => run(env2, async () => {
-      let current = pending;
-      if (!current) {
-        let url2 = "";
-        let urlReady;
-        const ready = new Promise((r) => {
-          urlReady = r;
-        });
-        const done = session2.signIn((u) => {
-          url2 = u;
-          urlReady();
-        });
-        await Promise.race([ready, done.catch(() => void 0)]);
-        current = { done, url: url2 };
-        pending = current;
-        const started = current;
-        done.finally(() => {
-          if (pending === started) pending = null;
-        }).catch(() => void 0);
-      }
+      const current = pending ?? (pending = await startSignIn(session));
       const outcome = await Promise.race([
-        current.done.then((s) => ({ kind: "done", session: s })),
-        delay(ctx.signInWaitMs ?? 9e4).then(() => ({ kind: "waiting" }))
+        current.done,
+        delay(ctx.signInWaitMs ?? 9e4).then(() => ({ ok: "waiting" }))
       ]);
-      if (outcome.kind === "waiting") {
+      if (outcome.ok === "waiting") {
         return {
           firm: null,
           text: `A ${env2.label} sign-in page should have opened in your browser. If it did not, open this link:
@@ -37208,7 +37234,9 @@ ${current.url}
 Once you have signed in, call sign_in again.`
         };
       }
-      return chooseFirm(session2, api2, outcome.session, firm);
+      if (pending === current) pending = null;
+      if (!outcome.ok) throw outcome.error;
+      return chooseFirm(session, api, outcome.session, firm);
     })
   );
   server2.registerTool(
@@ -37220,9 +37248,9 @@ Once you have signed in, call sign_in again.`
       annotations: { openWorldHint: true }
     },
     ({ firm }) => run(env2, async () => {
-      const saved = await session2.current();
+      const saved = await session.current();
       if (!saved) throw new UserFacingError(`Not signed in to ${env2.label}. Call sign_in.`);
-      return chooseFirm(session2, api2, saved, firm);
+      return chooseFirm(session, api, saved, firm);
     })
   );
   server2.registerTool(
@@ -37234,7 +37262,7 @@ Once you have signed in, call sign_in again.`
       annotations: { destructiveHint: true, openWorldHint: true }
     },
     () => run(env2, async () => {
-      const revoked = await session2.signOut();
+      const revoked = await session.signOut();
       return {
         firm: null,
         text: revoked ? `Signed out of ${env2.label}. The saved sign-in is deleted and revoked.` : `Signed out of ${env2.label}. The saved sign-in is deleted; rightflow could not confirm the revocation, so it ends when it expires.`
@@ -37242,10 +37270,26 @@ Once you have signed in, call sign_in again.`
     })
   );
 }
-async function chooseFirm(session2, api2, saved, query) {
+async function startSignIn(session) {
+  let url2 = "";
+  let urlReady;
+  const ready = new Promise((r) => {
+    urlReady = r;
+  });
+  const done = session.signIn((u) => {
+    url2 = u;
+    urlReady();
+  }).then(
+    (s) => ({ ok: true, session: s }),
+    (error62) => ({ ok: false, error: error62 })
+  );
+  await Promise.race([ready, done]);
+  return { done, url: url2 };
+}
+async function chooseFirm(session, api, saved, query) {
   const probeOrg = saved.organizationId ?? saved.organizationIds[0];
   if (!probeOrg) throw new UserFacingError("This login does not belong to any firm.");
-  const me = await fetchMe(api2, await session2.probeToken(probeOrg));
+  const me = await fetchMe(api, await session.probeToken(probeOrg));
   const firms = selectableFirms(me);
   if (firms.length === 0) throw new UserFacingError("This login does not belong to any firm.");
   const candidates = query ? matchFirms(firms, query) : firms;
@@ -37257,8 +37301,11 @@ ${list}` };
   }
   const chosen = candidates[0];
   if (!chosen) throw new Error("unreachable");
-  await session2.selectFirm(chosen.id, chosen.name);
-  const selected = await fetchMe(api2);
+  if (!saved.organizationIds.includes(chosen.id)) {
+    throw new UserFacingError(`${chosen.name} was added to this login after it signed in. Call sign_in to pick it up.`);
+  }
+  await session.selectFirm(chosen.id, chosen.name);
+  const selected = await fetchMe(api);
   return { firm: chosen, text: [`Now working on ${chosen.name}.`, ...describeAccess(selected)].join("\n") };
 }
 function describeAccess(me) {
@@ -37268,7 +37315,7 @@ function describeAccess(me) {
   const enabled = me.features[SETUP_MODULE]?.enabled === true;
   const lines = [
     `Signed in as ${who}, role: ${role}.`,
-    `May change agent teams: ${canChange ? "yes" : "no \u2014 this needs the owner or admin role in the firm"}.`,
+    `May change agent teams: ${canChange ? "yes" : "no \u2014 your role in this firm does not include changing its settings"}.`,
     `Own agent teams switched on for this firm: ${enabled ? "yes" : "no \u2014 rightflow switches this on per firm"}.`
   ];
   return lines;
@@ -37285,9 +37332,6 @@ function delay(ms) {
 // src/rightflow-config/server.ts
 console.log = console.error;
 console.info = console.error;
-var env = resolveEnvironment();
-var session = new Session(env, new SessionStore(dataDirectory(), env.name), { openBrowser });
-var api = new Api(session);
 var version2 = pluginVersion();
 var server = new McpServer(
   { name: "rightflow-config", version: version2 },
@@ -37295,7 +37339,21 @@ var server = new McpServer(
     instructions: "Tools for setting up and changing a firm's own agent team in rightflow. Every answer starts with the environment and firm it is about; say which one when you report results. Call status first when unsure."
   }
 );
-registerSessionTools(server, { session, api, version: version2 });
+var env = null;
+try {
+  env = resolveEnvironment();
+} catch (err) {
+  const reason = err instanceof Error ? err.message : String(err);
+  server.registerTool(
+    "status",
+    { title: "rightflow status", description: "Why this plugin cannot work right now.", inputSchema: {} },
+    () => ({ isError: true, content: [{ type: "text", text: reason }] })
+  );
+}
+if (env) {
+  const session = new Session(env, new SessionStore(dataDirectory(), env.name), { openBrowser });
+  registerSessionTools(server, { session, api: new Api(session), version: version2 });
+}
 await server.connect(new StdioServerTransport());
 function pluginVersion() {
   try {

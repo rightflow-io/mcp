@@ -159,8 +159,12 @@ export class Session {
 
   /** Deletes the saved login and asks the sign-in service to revoke it. Returns whether the revocation was confirmed. */
   async signOut(): Promise<boolean> {
-    const session = await this.store.read();
-    await this.store.clear();
+    // Under the lock, so a refresh in another session cannot write a new token back after the clear.
+    const session = await this.store.withLock(async () => {
+      const saved = await this.store.read().catch(() => null);
+      await this.store.clear();
+      return saved;
+    });
     return session ? revokeRefreshToken(this.env, session.refreshToken, this.fetchImpl) : true;
   }
 

@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import { UserFacingError } from "../errors.ts";
 
 /**
@@ -53,21 +53,25 @@ function listen(port: number, expectedState: string, timeoutMs: number): Promise
         res.writeHead(404).end();
         return;
       }
+      // Any page open in the browser can send a request here. Only an answer
+      // carrying this sign-in's state may end it; anything else is turned away
+      // and the wait goes on.
+      if (url.searchParams.get("state") !== expectedState) {
+        respond(res, 400, "This answer does not belong to the sign-in in progress.");
+        return;
+      }
       const error = url.searchParams.get("error");
-      const state = url.searchParams.get("state");
       const received = url.searchParams.get("code");
       let outcome: { ok: true; code: string } | { ok: false; message: string };
       if (error) outcome = { ok: false, message: `The sign-in was not completed (${error}).` };
-      else if (state !== expectedState) outcome = { ok: false, message: "The sign-in answer did not belong to this request." };
       else if (!received) outcome = { ok: false, message: "The sign-in answer carried no code." };
       else outcome = { ok: true, code: received };
 
-      res.writeHead(outcome.ok ? 200 : 400, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "content-security-policy": "default-src 'none'",
-      });
-      res.end(page(outcome.ok ? "Signed in. You can close this window and return to Claude." : outcome.message));
+      respond(
+        res,
+        outcome.ok ? 200 : 400,
+        outcome.ok ? "Signed in. You can close this window and return to Claude." : outcome.message,
+      );
       if (timer) clearTimeout(timer);
       server.close();
       if (outcome.ok) settle.resolve(outcome.code);
@@ -78,7 +82,9 @@ function listen(port: number, expectedState: string, timeoutMs: number): Promise
     server.listen(port, "127.0.0.1", () => {
       timer = setTimeout(() => {
         server.close();
-        settle.reject(new UserFacingError("No sign-in arrived within five minutes. Call sign_in to try again."));
+        settle.reject(
+          new UserFacingError(`No sign-in arrived within ${Math.round(timeoutMs / 60_000)} minutes. Call sign_in to try again.`),
+        );
       }, timeoutMs);
       timer.unref();
       resolveReady({
@@ -93,8 +99,13 @@ function listen(port: number, expectedState: string, timeoutMs: number): Promise
   });
 }
 
-function page(message: string): string {
-  return `<!doctype html><meta charset="utf-8"><title>rightflow</title><p>${escapeHtml(message)}</p>`;
+function respond(res: ServerResponse, status: number, message: string): void {
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'",
+  });
+  res.end(`<!doctype html><meta charset="utf-8"><title>rightflow</title><p>${escapeHtml(message)}</p>`);
 }
 
 export function escapeHtml(s: string): string {

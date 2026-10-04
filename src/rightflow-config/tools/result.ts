@@ -13,8 +13,8 @@ export interface ToolOutcome {
 
 /**
  * Runs a tool body and shapes its answer: the header first, always. A refusal
- * the person can act on is shown as written; anything unexpected is reported
- * without its stack, which goes to stderr for whoever debugs the plugin.
+ * the person can act on is shown as written. Anything unexpected goes to stderr
+ * only: its message can quote what was being read when it failed, a token included.
  */
 export async function run(env: Environment, body: () => Promise<ToolOutcome>): Promise<ToolResult> {
   try {
@@ -25,10 +25,14 @@ export async function run(env: Environment, body: () => Promise<ToolOutcome>): P
       return { isError: true, content: [{ type: "text", text: `${header(env)}\n${err.message}` }] };
     }
     console.error(err);
-    const message = err instanceof Error ? err.message : String(err);
     return {
       isError: true,
-      content: [{ type: "text", text: `${header(env)}\nSomething went wrong inside the plugin: ${message}` }],
+      content: [
+        {
+          type: "text",
+          text: `${header(env)}\nSomething went wrong inside the plugin. The details are in the rightflow-config MCP server log (/mcp in Claude Code).`,
+        },
+      ],
     };
   }
 }

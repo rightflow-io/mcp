@@ -38,9 +38,10 @@ const ENVIRONMENTS: Record<EnvironmentName, Omit<Environment, "overridden">> = {
 };
 
 /**
- * Picks the environment from the plugin's `environment` option. An empty or
- * unknown value is refused rather than defaulted: signing in to the wrong
- * rightflow is exactly the mistake a silent default would make.
+ * Picks the environment from the plugin's `environment` option. Empty means the
+ * option's own default, production; an unknown value is refused rather than
+ * mapped to either, since signing in to the wrong rightflow is the mistake a
+ * guess would make.
  */
 export function resolveEnvironment(env: NodeJS.ProcessEnv = process.env): Environment {
   const raw = (env.RF_CONFIG_ENV ?? "").trim();

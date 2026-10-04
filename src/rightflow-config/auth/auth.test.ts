@@ -119,10 +119,16 @@ test("the loopback callback accepts its own state and nothing else", async () =>
   assert.equal(res.status, 200);
   assert.equal(await ok.code, "abc");
 
-  const bad = await awaitCallback("expected", { ports: [53792, 53793], timeoutMs: 5000 });
-  const rejected = assert.rejects(bad.code, UserFacingError);
-  const res2 = await fetch(`${bad.redirectUri}?code=abc&state=forged`);
-  assert.equal(res2.status, 400);
+  // A forged answer or a stray error is turned away without ending the wait.
+  const second = await awaitCallback("expected", { ports: [53792, 53793], timeoutMs: 5000 });
+  assert.equal((await fetch(`${second.redirectUri}?code=forged&state=forged`)).status, 400);
+  assert.equal((await fetch(`${second.redirectUri}?error=access_denied`)).status, 400);
+  assert.equal((await fetch(`${second.redirectUri}?code=real&state=expected`)).status, 200);
+  assert.equal(await second.code, "real");
+
+  const refused = await awaitCallback("expected", { ports: [53794, 53795], timeoutMs: 5000 });
+  const rejected = assert.rejects(refused.code, UserFacingError);
+  assert.equal((await fetch(`${refused.redirectUri}?error=access_denied&state=expected`)).status, 400);
   await rejected;
 });
 

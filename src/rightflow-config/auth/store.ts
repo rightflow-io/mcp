@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EnvironmentName } from "../env.ts";
@@ -38,7 +39,13 @@ export class SessionStore {
       if (isNotFound(err)) return null;
       throw err;
     }
-    const parsed: unknown = JSON.parse(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // A parse error quotes the file, and the file holds a token.
+      parsed = null;
+    }
     if (!isStoredSession(parsed)) {
       throw new Error(`The saved sign-in at ${this.path} is not in a format this plugin understands. Sign out and in again.`);
     }
@@ -48,7 +55,7 @@ export class SessionStore {
   /** Writes atomically with mode 0600, so a crash never leaves half a file and nobody else can read it. */
   async write(session: StoredSession): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const tmp = `${this.path}.${process.pid}.tmp`;
+    const tmp = `${this.path}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(session, null, 2)}\n`, { mode: 0o600 });
     await rename(tmp, this.path);
   }
@@ -66,11 +73,16 @@ export class SessionStore {
   async withLock<T>(fn: () => Promise<T>, timeoutMs = 10_000): Promise<T> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const lockPath = `${this.path}.lock`;
+    const owner = randomUUID();
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       try {
         const handle = await open(lockPath, "wx", 0o600);
-        await handle.close();
+        try {
+          await handle.writeFile(owner);
+        } finally {
+          await handle.close();
+        }
         break;
       } catch (err) {
         if (!isExists(err)) throw err;
@@ -87,7 +99,11 @@ export class SessionStore {
     try {
       return await fn();
     } finally {
-      await rm(lockPath, { force: true });
+      // If this run outlived STALE_LOCK_MS, another session has taken the lock
+      // over; removing it would let a third one in beside that one.
+      if ((await readFile(lockPath, "utf8").catch(() => null)) === owner) {
+        await rm(lockPath, { force: true });
+      }
     }
   }
 }

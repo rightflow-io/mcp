@@ -9,6 +9,12 @@ export type Fetch = typeof fetch;
 const SCOPE = "openid profile email offline_access urn:logto:scope:organizations";
 const ORGANIZATIONS_RESOURCE = "urn:logto:resource:organizations";
 
+/**
+ * Token requests run while the sign-in lock is held, so they must end well before
+ * another session would take that lock as abandoned (`STALE_LOCK_MS`).
+ */
+export const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
+
 export interface TokenSet {
   accessToken: string;
   refreshToken: string;
@@ -89,6 +95,7 @@ export async function revokeRefreshToken(env: Environment, refreshToken: string,
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token: refreshToken, token_type_hint: "refresh_token", client_id: env.clientId }),
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
     });
     return res.ok;
   } catch {
@@ -97,12 +104,19 @@ export async function revokeRefreshToken(env: Environment, refreshToken: string,
 }
 
 async function tokenRequest(env: Environment, body: Record<string, string>, fetchImpl: Fetch): Promise<TokenSet> {
-  const res = await fetchImpl(`${env.authUrl}/oidc/token`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(body),
-  });
-  const text = await res.text();
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetchImpl(`${env.authUrl}/oidc/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(body),
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
+    });
+    text = await res.text();
+  } catch {
+    throw new UserFacingError(`Could not reach the ${env.label} sign-in service (${env.authUrl}). Check the connection and try again.`);
+  }
   if (!res.ok) {
     // The service's error code is safe to show; the body is not echoed further.
     const code = safeErrorCode(text);
@@ -111,7 +125,8 @@ async function tokenRequest(env: Environment, body: Record<string, string>, fetc
     }
     throw new UserFacingError(`The ${env.label} sign-in service refused the request (${res.status}${code ? `, ${code}` : ""}).`);
   }
-  const json: unknown = JSON.parse(text);
+  // Parse errors quote their input, and this input is a token: never let one surface.
+  const json = parseOrNull(text);
   if (typeof json !== "object" || json === null) throw new Error("Malformed token response.");
   const t = json as Record<string, unknown>;
   if (typeof t.access_token !== "string" || typeof t.expires_in !== "number") {
@@ -130,15 +145,19 @@ async function tokenRequest(env: Environment, body: Record<string, string>, fetc
 }
 
 function safeErrorCode(text: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null && "error" in parsed && typeof parsed.error === "string") {
-      return /^[a-z_]{1,64}$/.test(parsed.error) ? parsed.error : null;
-    }
-  } catch {
-    // Not JSON: nothing worth repeating.
+  const parsed = parseOrNull(text);
+  if (typeof parsed === "object" && parsed !== null && "error" in parsed && typeof parsed.error === "string") {
+    return /^[a-z_]{1,64}$/.test(parsed.error) ? parsed.error : null;
   }
   return null;
+}
+
+function parseOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -150,7 +169,7 @@ function safeErrorCode(text: string): string | null {
 export function organizationIdsFromIdToken(idToken: string): string[] {
   const payload = idToken.split(".")[1];
   if (!payload) return [];
-  const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  const claims = parseOrNull(Buffer.from(payload, "base64url").toString("utf8"));
   if (typeof claims !== "object" || claims === null || !("organizations" in claims)) return [];
   const orgs = claims.organizations;
   return Array.isArray(orgs) ? orgs.filter((o): o is string => typeof o === "string") : [];

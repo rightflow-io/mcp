@@ -20,8 +20,10 @@ const MIN_NODE = [22, 18] as const;
 export function registerSessionTools(server: McpServer, ctx: SessionToolsContext): void {
   const { session, api } = ctx;
   const env = session.env;
-  // One browser sign-in at a time; a second sign_in call picks up the first.
-  let pending: { done: Promise<StoredSession>; url: string } | null = null;
+  // One browser sign-in at a time. It stays here until a sign_in call has seen how
+  // it ended: a login finished after the call that started it returned the link
+  // is picked up by the next call, not answered with a second browser sign-in.
+  let pending: PendingSignIn | null = null;
 
   server.registerTool(
     "status",
@@ -67,34 +69,12 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
     },
     ({ firm }) =>
       run(env, async () => {
-        let current = pending;
-        if (!current) {
-          let url = "";
-          let urlReady!: () => void;
-          const ready = new Promise<void>((r) => {
-            urlReady = r;
-          });
-          const done = session.signIn((u) => {
-            url = u;
-            urlReady();
-          });
-          // signIn hands over the URL before it starts waiting for the browser;
-          // if it fails before that, the failure is reported below.
-          await Promise.race([ready, done.catch(() => undefined)]);
-          current = { done, url };
-          pending = current;
-          const started = current;
-          done
-            .finally(() => {
-              if (pending === started) pending = null;
-            })
-            .catch(() => undefined);
-        }
+        const current = pending ?? (pending = await startSignIn(session));
         const outcome = await Promise.race([
-          current.done.then((s) => ({ kind: "done" as const, session: s })),
-          delay(ctx.signInWaitMs ?? 90_000).then(() => ({ kind: "waiting" as const })),
+          current.done,
+          delay(ctx.signInWaitMs ?? 90_000).then(() => ({ ok: "waiting" as const })),
         ]);
-        if (outcome.kind === "waiting") {
+        if (outcome.ok === "waiting") {
           return {
             firm: null,
             text:
@@ -102,6 +82,8 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
               `${current.url}\n\nOnce you have signed in, call sign_in again.`,
           };
         }
+        if (pending === current) pending = null;
+        if (!outcome.ok) throw outcome.error;
         return chooseFirm(session, api, outcome.session, firm);
       }),
   );
@@ -143,6 +125,33 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
   );
 }
 
+type SignInOutcome = { ok: true; session: StoredSession } | { ok: false; error: unknown };
+
+interface PendingSignIn {
+  /** Never rejects, so an outcome nobody is waiting for is kept rather than reported as unhandled. */
+  done: Promise<SignInOutcome>;
+  url: string;
+}
+
+async function startSignIn(session: Session): Promise<PendingSignIn> {
+  let url = "";
+  let urlReady!: () => void;
+  const ready = new Promise<void>((r) => {
+    urlReady = r;
+  });
+  const done = session.signIn((u) => {
+    url = u;
+    urlReady();
+  }).then(
+    (s): SignInOutcome => ({ ok: true, session: s }),
+    (error: unknown): SignInOutcome => ({ ok: false, error }),
+  );
+  // signIn hands over the URL before it starts waiting for the browser; a
+  // failure before that point is reported through `done`.
+  await Promise.race([ready, done]);
+  return { done, url };
+}
+
 async function chooseFirm(
   session: Session,
   api: Api,
@@ -167,6 +176,10 @@ async function chooseFirm(
   }
   const chosen = candidates[0];
   if (!chosen) throw new Error("unreachable");
+  if (!saved.organizationIds.includes(chosen.id)) {
+    // The login only knows the firms it had when it was made.
+    throw new UserFacingError(`${chosen.name} was added to this login after it signed in. Call sign_in to pick it up.`);
+  }
   await session.selectFirm(chosen.id, chosen.name);
   const selected = await fetchMe(api);
   return { firm: chosen, text: [`Now working on ${chosen.name}.`, ...describeAccess(selected)].join("\n") };
@@ -179,7 +192,7 @@ function describeAccess(me: Me): string[] {
   const enabled = me.features[SETUP_MODULE]?.enabled === true;
   const lines = [
     `Signed in as ${who}, role: ${role}.`,
-    `May change agent teams: ${canChange ? "yes" : "no — this needs the owner or admin role in the firm"}.`,
+    `May change agent teams: ${canChange ? "yes" : "no — your role in this firm does not include changing its settings"}.`,
     `Own agent teams switched on for this firm: ${enabled ? "yes" : "no — rightflow switches this on per firm"}.`,
   ];
   return lines;

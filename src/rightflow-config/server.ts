@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Api } from "./api.ts";
 import { Session } from "./auth/session.ts";
 import { SessionStore } from "./auth/store.ts";
-import { dataDirectory, resolveEnvironment } from "./env.ts";
+import { dataDirectory, resolveEnvironment, type Environment } from "./env.ts";
 import { registerSessionTools } from "./tools/session-tools.ts";
 
 // stdout carries the protocol. Anything written there by accident would corrupt
@@ -13,11 +13,7 @@ import { registerSessionTools } from "./tools/session-tools.ts";
 console.log = console.error;
 console.info = console.error;
 
-const env = resolveEnvironment();
-const session = new Session(env, new SessionStore(dataDirectory(), env.name), { openBrowser });
-const api = new Api(session);
 const version = pluginVersion();
-
 const server = new McpServer(
   { name: "rightflow-config", version },
   {
@@ -26,7 +22,23 @@ const server = new McpServer(
       "environment and firm it is about; say which one when you report results. Call status first when unsure.",
   },
 );
-registerSessionTools(server, { session, api, version });
+
+let env: Environment | null = null;
+try {
+  env = resolveEnvironment();
+} catch (err) {
+  // The server still starts, so the person sees why instead of a server that failed to launch.
+  const reason = err instanceof Error ? err.message : String(err);
+  server.registerTool(
+    "status",
+    { title: "rightflow status", description: "Why this plugin cannot work right now.", inputSchema: {} },
+    () => ({ isError: true, content: [{ type: "text", text: reason }] }),
+  );
+}
+if (env) {
+  const session = new Session(env, new SessionStore(dataDirectory(), env.name), { openBrowser });
+  registerSessionTools(server, { session, api: new Api(session), version });
+}
 
 await server.connect(new StdioServerTransport());
 

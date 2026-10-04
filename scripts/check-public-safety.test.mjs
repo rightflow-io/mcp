@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isIban, scanPath, scanText } from "./check-public-safety.mjs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { isIban, scanCommits, scanPath, scanText } from "./check-public-safety.mjs";
 
 // Samples are assembled at run time so that this file does not itself contain what
 // the scanner looks for.
@@ -64,5 +68,31 @@ test("files that must never be tracked are refused by path", () => {
   }
   for (const p of [".env.example", "server/src/env.ts", "README.md"]) {
     assert.deepEqual(scanPath(p), [], p);
+  }
+});
+
+test("a link to this repository is fine, a look-alike repository is not", () => {
+  assert.deepEqual(rules(j("https://github.com/rightflow-io/", "mcp/pull/1")), []);
+  assert.deepEqual(rules(j("https://github.com/rightflow-io/", "mcp-internal")), ["private-link"]);
+});
+
+test("a secret added in one commit and removed in the next is still found", () => {
+  const dir = mkdtempSync(join(tmpdir(), "public-safety-"));
+  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+  try {
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", j("bot", "@users.noreply.github.com"));
+    git("config", "user.name", "bot");
+    git("commit", "-q", "--allow-empty", "-m", "root");
+    writeFileSync(join(dir, "config.txt"), j("token gh", "p_", "a".repeat(36), "\n"));
+    git("add", "config.txt");
+    git("commit", "-q", "-m", "add");
+    writeFileSync(join(dir, "config.txt"), "token removed\n");
+    git("commit", "-q", "-am", "remove");
+    const findings = scanCommits("HEAD~2..HEAD", dir);
+    assert.deepEqual(findings.map((f) => f.rule), ["token"]);
+    assert.match(findings[0].where, /config\.txt/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

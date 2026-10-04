@@ -7,7 +7,7 @@
 //
 //   node scripts/check-public-safety.mjs                  every tracked or new file
 //   node scripts/check-public-safety.mjs --text <file>    one text (a PR title and body)
-//   node scripts/check-public-safety.mjs --commits <a..b> messages and identities of a commit range
+//   node scripts/check-public-safety.mjs --commits <a..b> messages, identities and added lines of a commit range
 //
 // A finding never prints the matched value, only where it is and which rule fired:
 // echoing a leaked token into a public CI log would leak it a second time.
@@ -89,7 +89,7 @@ export const RULES = [
   {
     rule: "private-link",
     message: "a link into a private system",
-    re: /\b(?:linear\.app\/[\w-]+\/(?:issue|project|document|view)|[\w-]+\.slack\.com\/archives|app\.slack\.com\/|notion\.(?:so|site)\/|[\w-]+\.grafana\.net|langfuse\.com\/project|console\.aws\.amazon\.com|console\.cloud\.google\.com|portal\.azure\.com|docs\.google\.com\/|drive\.google\.com\/|github\.com\/rightflow-io\/(?!mcp\b)[\w.-]+|claude\.ai\/code\/session_)/g,
+    re: /\b(?:linear\.app\/[\w-]+\/(?:issue|project|document|view)|[\w-]+\.slack\.com\/archives|app\.slack\.com\/|notion\.(?:so|site)\/|[\w-]+\.grafana\.net|langfuse\.com\/project|console\.aws\.amazon\.com|console\.cloud\.google\.com|portal\.azure\.com|docs\.google\.com\/|drive\.google\.com\/|github\.com\/rightflow-io\/(?!mcp(?![\w.-]))[\w.-]+|claude\.ai\/code\/session_)/g,
   },
   { rule: "internal-host", message: "an internal hostname", re: /\b[\w-]+(?:\.[\w-]+)*\.(?:svc\.cluster\.local|internal)\b/g },
   {
@@ -154,8 +154,8 @@ export function scanPath(path) {
   return [];
 }
 
-function git(args) {
-  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+function git(args, cwd) {
+  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, ...(cwd ? { cwd } : {}) });
 }
 
 function scanTree() {
@@ -178,8 +178,8 @@ function scanTree() {
   return out;
 }
 
-function scanCommits(range) {
-  const raw = git(["log", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e", range]);
+export function scanCommits(range, cwd) {
+  const raw = git(["log", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e", range], cwd);
   const out = [];
   for (const rec of raw.split("\x1e").map((r) => r.trim()).filter(Boolean)) {
     const [sha, , authorEmail, , committerEmail, body = ""] = rec.split("\x1f");
@@ -194,6 +194,47 @@ function scanCommits(range) {
       }
     }
     out.push(...scanText(body).map((f) => ({ where: `commit ${short} message line ${f.line}`, ...f })));
+  }
+  out.push(...scanAddedLines(range, cwd));
+  return out;
+}
+
+/**
+ * Every line a commit in the range adds. The tree scan sees only the last commit,
+ * but a secret added in one commit and deleted in the next is just as public: it
+ * sits in the branch history and has to be rotated. Merge commits are skipped;
+ * what they bring in was scanned on its own branch.
+ */
+function scanAddedLines(range, cwd) {
+  const raw = git(["log", "--no-merges", "--format=%x1e%H", "-p", "-U0", "--no-color", "--no-ext-diff", "--no-renames", range], cwd);
+  const out = [];
+  for (const rec of raw.split("\x1e").filter((r) => r.trim())) {
+    const [sha = "", ...lines] = rec.split("\n");
+    const short = sha.slice(0, 10);
+    /** @type {Map<string, string[]>} */
+    const added = new Map();
+    let path = null;
+    for (const line of lines) {
+      if (line.startsWith("diff --git ")) path = null;
+      else if (line.startsWith("+++ ")) {
+        const target = line.slice(4).replace(/^"|"$/g, "");
+        path = target === "/dev/null" ? null : target.replace(/^b\//, "");
+        if (path) {
+          out.push(...scanPath(path).map((f) => ({ where: `commit ${short} ${path}`, ...f })));
+          if (!added.has(path)) added.set(path, []);
+        }
+      } else if (path && line.startsWith("+")) added.get(path)?.push(line.slice(1));
+    }
+    for (const [file, text] of added) {
+      if (file === SELF || file === SELF_TEST) continue;
+      const personal = !VENDORED.some((v) => v.test(file));
+      const seen = new Set();
+      for (const f of scanText(text.join("\n"), { personal })) {
+        if (seen.has(f.rule)) continue;
+        seen.add(f.rule);
+        out.push({ where: `commit ${short} ${file} (added lines)`, rule: f.rule, message: f.message });
+      }
+    }
   }
   return out;
 }
