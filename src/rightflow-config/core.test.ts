@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { serverMessage } from "./api.ts";
 import { resolveEnvironment } from "./env.ts";
 import { UserFacingError } from "./errors.ts";
 import { header } from "./header.ts";
@@ -55,4 +56,16 @@ test("every answer starts with the header, errors included", async () => {
   });
   assert.equal(refused.isError, true);
   assert.equal(refused.content[0]?.type === "text" && refused.content[0].text, "[rightflow Production · no firm selected]\nnot allowed");
+});
+
+test("rightflow's refusal is read from inside its error envelope", () => {
+  const wrapped = (error: unknown) => ({ statusCode: 403, path: "/x", method: "GET", error });
+  assert.equal(serverMessage(wrapped({ statusCode: 403, message: "Not for this role.", error: "Forbidden" })), "Not for this role.");
+  assert.equal(serverMessage(wrapped("A plain sentence.")), "A plain sentence.");
+  assert.equal(
+    serverMessage(wrapped({ message: "Request data failed schema validation", issues: [{ path: "files", message: "Too many" }] })),
+    "Request data failed schema validation\n- files: Too many",
+  );
+  assert.equal(serverMessage(wrapped({ code: "X" })), null);
+  assert.equal(serverMessage("not json"), "not json");
 });

@@ -61,6 +61,11 @@ export class Api {
     if (res.status === 403) {
       throw new UserFacingError(serverMessage(parsed) ?? "rightflow refused this for your account.");
     }
+    if (res.status === 413) {
+      throw new UserFacingError(
+        "rightflow refused the request as too large. team_reference lists the limits for files and request size.",
+      );
+    }
     if (res.status >= 500) {
       throw new UserFacingError(`rightflow ${env.label} had a problem answering (${res.status}). Try again shortly.`);
     }
@@ -77,11 +82,31 @@ function parseJson(text: string): unknown {
   }
 }
 
+/**
+ * The details of a refusal. rightflow wraps them as `{ statusCode, …, error }`,
+ * where `error` is the refusal itself: a sentence, or an object with `message`
+ * and, depending on the refusal, a `code` and the findings behind it.
+ */
+export function errorDetail(body: unknown): Record<string, unknown> | string | null {
+  const detail = isRecord(body) && "error" in body ? body.error : body;
+  if (typeof detail === "string" || isRecord(detail)) return detail;
+  return null;
+}
+
 /** The API's own human-readable refusal, when it sent one. */
 export function serverMessage(body: unknown): string | null {
-  if (typeof body !== "object" || body === null || !("message" in body)) return null;
-  const m = body.message;
-  if (typeof m === "string") return m;
-  if (Array.isArray(m) && m.every((x) => typeof x === "string")) return m.join(" ");
-  return null;
+  const detail = errorDetail(body);
+  if (typeof detail === "string") return detail;
+  if (!detail) return null;
+  const m = detail.message;
+  const message = typeof m === "string" ? m : Array.isArray(m) && m.every((x) => typeof x === "string") ? m.join(" ") : null;
+  const issues = Array.isArray(detail.issues)
+    ? detail.issues.filter(isRecord).map((i) => `- ${typeof i.path === "string" && i.path ? `${i.path}: ` : ""}${String(i.message ?? "")}`)
+    : [];
+  if (message === null) return issues.length > 0 ? issues.join("\n") : null;
+  return issues.length > 0 ? `${message}\n${issues.join("\n")}` : message;
+}
+
+export function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
