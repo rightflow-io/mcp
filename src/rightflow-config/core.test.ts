@@ -79,6 +79,18 @@ test("every answer starts with the header, errors included", async () => {
   assert.equal(refused.content[0]?.type === "text" && refused.content[0].text, "[rightflow Production · no firm selected]\nnot allowed");
 });
 
+test("a refusal names the selected firm, not \"no firm selected\"", async () => {
+  const env = resolveEnvironment({});
+  const refused = await run(
+    env,
+    async () => {
+      throw new UserFacingError("not enabled for this firm");
+    },
+    async () => ({ name: "Firm A" }),
+  );
+  assert.equal(refused.content[0]?.type === "text" && refused.content[0].text, '[rightflow Production · firm "Firm A"]\nnot enabled for this firm');
+});
+
 test("rightflow's refusal is read from inside its error envelope", () => {
   const wrapped = (error: unknown) => ({ statusCode: 403, path: "/x", method: "GET", error });
   assert.equal(serverMessage(wrapped({ statusCode: 403, message: "Not for this role.", error: "Forbidden" })), "Not for this role.");
