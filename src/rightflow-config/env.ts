@@ -33,7 +33,8 @@ const ENVIRONMENTS: Record<EnvironmentName, Omit<Environment, "overridden">> = {
     label: "Development",
     apiUrl: "https://api.dev.rightflow.one/api",
     authUrl: "https://auth.dev.rightflow.one",
-    clientId: null,
+    // Public by design (see `clientId` above): a native app's id, not a secret.
+    clientId: "f7j5f9m7ziewtzmr6xshe",
   },
 };
 
