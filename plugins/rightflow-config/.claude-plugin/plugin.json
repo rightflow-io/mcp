@@ -1,7 +1,7 @@
 {
   "name": "rightflow-config",
   "displayName": "rightflow config",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Set up and change your firm's own agent team in rightflow: load it, change it, review every change, submit it, and see what changed when.",
   "author": {
     "name": "rightflow"
@@ -18,11 +18,7 @@
     "environment": {
       "type": "string",
       "title": "rightflow environment",
-      "description": "Which rightflow the plugin signs in to. Production unless rightflow asked you to use development.",
-      "options": [
-        "production",
-        "development"
-      ],
+      "description": "Which rightflow the plugin signs in to: production or development. Production unless rightflow asked you to use development.",
       "default": "production"
     }
   }

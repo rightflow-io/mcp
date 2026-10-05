@@ -49,7 +49,7 @@ export function resolveEnvironment(env: NodeJS.ProcessEnv = process.env): Enviro
   const raw = (env.RF_CONFIG_ENV ?? "").trim();
   const name = raw === "" ? "production" : raw;
   if (name !== "production" && name !== "development") {
-    throw new Error(`Unknown rightflow environment "${raw}". Choose production or development in /config.`);
+    throw new Error(`Unknown rightflow environment "${raw}". Choose production or development under /plugin.`);
   }
   const base = ENVIRONMENTS[name];
   // For people working on the plugin against a rightflow running on their own
