@@ -37,7 +37,7 @@ import {
   renderRevision,
   renderRevisionLine,
 } from "./render.ts";
-import { run } from "./result.ts";
+import { run, selectedFirmOf, type ToolOutcome } from "./result.ts";
 
 export interface TeamToolsContext {
   session: Session;
@@ -83,6 +83,7 @@ type Absorb = Array<{ ruleId: string; reason: string }>;
 export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): void {
   const { session, api } = ctx;
   const env = session.env;
+  const go = (body: () => Promise<ToolOutcome>) => run(env, body, selectedFirmOf(session));
   const cwd = ctx.cwd ?? process.cwd();
   // What the person has been shown, by preview id. A preview id is a digest of
   // exactly what was checked, so a submit of anything else finds no entry.
@@ -182,7 +183,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     ({ lang }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const ref = await get<SetupReference>(`/setup/reference${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`);
         return { firm: current, text: renderReference(ref) };
@@ -198,7 +199,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     () =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const page = await get<Page<SetupTeam>>(`/setup/teams?limit=${TEAM_LIST_LIMIT}`);
         if (page.data.length === 0) {
@@ -228,7 +229,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { openWorldHint: true },
     },
     ({ team, folder, replace }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const found = await resolveTeam(team);
         const bundle = await get<SetupBundle>(`/setup/teams/${encodeURIComponent(found.id)}/bundle`);
@@ -271,7 +272,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { openWorldHint: true },
     },
     ({ folder, locale }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         let chosen = locale;
         if (!chosen) {
@@ -313,7 +314,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     ({ folder, absorbRules, paths }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const { folder: dir, marker } = await pulledFolder(folder, current);
         const files = await readTeamFiles(dir);
@@ -354,7 +355,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     ({ folder, message, previewId, absorbRules }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const { folder: dir, marker } = await pulledFolder(folder, current);
         const files = await readTeamFiles(dir);
@@ -401,7 +402,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     ({ team }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const found = await resolveTeam(team);
         const learnings = await get<SetupLearnings>(`/setup/teams/${encodeURIComponent(found.id)}/learnings`);
@@ -422,7 +423,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     ({ team, page, limit }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const found = await resolveTeam(team);
         const list = await get<Page<RevisionSummary>>(
@@ -451,7 +452,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     ({ team, number, paths }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const found = await resolveTeam(team);
         const detail = await get<RevisionDetail>(`/setup/teams/${encodeURIComponent(found.id)}/revisions/${number}`);
@@ -470,7 +471,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     ({ team, number, paths }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const found = await resolveTeam(team);
         const teamPath = `/setup/teams/${encodeURIComponent(found.id)}`;
@@ -503,7 +504,7 @@ export function registerTeamTools(server: McpServer, ctx: TeamToolsContext): voi
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     ({ team, number, message, previewId }) =>
-      run(env, async () => {
+      go(async () => {
         const current = await firm();
         const found = await resolveTeam(team);
         const preview = previews.get(previewId);
