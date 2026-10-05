@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { serverMessage } from "./api.ts";
 import { resolveEnvironment } from "./env.ts";
 import { UserFacingError } from "./errors.ts";
@@ -11,6 +12,20 @@ test("production is the default and an unknown environment is refused", () => {
   assert.equal(resolveEnvironment({}).name, "production");
   assert.equal(resolveEnvironment({ RF_CONFIG_ENV: "development" }).label, "Development");
   assert.throws(() => resolveEnvironment({ RF_CONFIG_ENV: "staging" }));
+});
+
+// Claude Code refuses the whole plugin over a userConfig key it does not know,
+// and people run older versions than CI validates with. Stay with the keys every
+// version accepts; the server refuses an unknown value itself.
+test("the plugin's settings use only keys every Claude Code version accepts", () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../../plugins/rightflow-config/.claude-plugin/plugin.json", import.meta.url), "utf8"),
+  ) as { userConfig?: Record<string, Record<string, unknown>> };
+  for (const [name, option] of Object.entries(manifest.userConfig ?? {})) {
+    for (const key of Object.keys(option)) {
+      assert.ok(["type", "title", "description", "default", "sensitive"].includes(key), `userConfig.${name}.${key}`);
+    }
+  }
 });
 
 test("development can sign in without an override", () => {
