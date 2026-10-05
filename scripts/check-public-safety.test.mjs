@@ -30,6 +30,7 @@ test("personal data is found, example domains are not", () => {
   assert.deepEqual(rules(j("write to someone", "@", "firm-domain.de")), ["email"]);
   assert.deepEqual(rules(j("see someone", "@", "example.org")), []);
   assert.deepEqual(rules(j("Co-Authored-By: Claude <noreply", "@", "anthropic.com>")), []);
+  assert.deepEqual(rules(j("Signed-off-by: dependabot[bot] <support", "@", "github.com>")), []);
   assert.deepEqual(rules(j("call +49 ", "30 1234567")), ["phone"]);
 });
 

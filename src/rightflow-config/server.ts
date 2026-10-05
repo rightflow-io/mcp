@@ -7,6 +7,7 @@ import { Session } from "./auth/session.ts";
 import { SessionStore } from "./auth/store.ts";
 import { dataDirectory, resolveEnvironment, type Environment } from "./env.ts";
 import { registerSessionTools } from "./tools/session-tools.ts";
+import { registerTeamTools } from "./tools/team-tools.ts";
 
 // stdout carries the protocol. Anything written there by accident would corrupt
 // it, so everything else the server says goes to stderr.
@@ -19,7 +20,9 @@ const server = new McpServer(
   {
     instructions:
       "Tools for setting up and changing a firm's own agent team in rightflow. Every answer starts with the " +
-      "environment and firm it is about; say which one when you report results. Call status first when unsure.",
+      "environment and firm it is about; say which one when you report results. Call status first when unsure. " +
+      "A change goes: pull_team (or new_team) → edit the folder → check_team → show the person every change → " +
+      "submit_team with their own summary. rightflow decides what is allowed; report its refusals, never work around them.",
   },
 );
 
@@ -37,7 +40,9 @@ try {
 }
 if (env) {
   const session = new Session(env, new SessionStore(dataDirectory(), env.name), { openBrowser });
-  registerSessionTools(server, { session, api: new Api(session), version });
+  const api = new Api(session);
+  registerSessionTools(server, { session, api, version });
+  registerTeamTools(server, { session, api });
 }
 
 await server.connect(new StdioServerTransport());
