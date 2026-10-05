@@ -5,7 +5,7 @@ import type { PendingSignIn, Session } from "../auth/session.ts";
 import type { StoredSession } from "../auth/store.ts";
 import { UserFacingError } from "../errors.ts";
 import { fetchMe, matchFirms, selectableFirms, SETUP_MODULE, SETUP_PERMISSION, type Me, type Membership } from "../me.ts";
-import { run } from "./result.ts";
+import { run, selectedFirmOf, type ToolOutcome } from "./result.ts";
 
 export interface SessionToolsContext {
   session: Session;
@@ -20,6 +20,7 @@ const MIN_NODE = [22, 18] as const;
 export function registerSessionTools(server: McpServer, ctx: SessionToolsContext): void {
   const { session, api } = ctx;
   const env = session.env;
+  const go = (body: () => Promise<ToolOutcome>) => run(env, body, selectedFirmOf(session));
   // One sign-in at a time. It stays here until a sign_in call has seen how it
   // ended, so the call after the one that showed the code picks up the login
   // instead of starting over with a new code.
@@ -36,7 +37,7 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     () =>
-      run(env, async () => {
+      go(async () => {
         const lines = [`Plugin version ${ctx.version}. ${nodeCheck()}`];
         const saved = await session.current();
         if (!saved) {
@@ -69,7 +70,7 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
       annotations: { openWorldHint: true },
     },
     ({ firm }) =>
-      run(env, async () => {
+      go(async () => {
         if (!pending) {
           pending = await session.startSignIn();
           return { firm: null, text: showCode(env.label, pending) };
@@ -97,7 +98,7 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
       annotations: { openWorldHint: true },
     },
     ({ firm }) =>
-      run(env, async () => {
+      go(async () => {
         const saved = await session.current();
         if (!saved) throw new UserFacingError(`Not signed in to ${env.label}. Call sign_in.`);
         return chooseFirm(session, api, saved, firm);
@@ -113,7 +114,7 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
       annotations: { destructiveHint: true, openWorldHint: true },
     },
     () =>
-      run(env, async () => {
+      go(async () => {
         const revoked = await session.signOut();
         return {
           firm: null,

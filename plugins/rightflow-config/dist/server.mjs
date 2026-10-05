@@ -37122,14 +37122,21 @@ function header(env2, firm, team) {
 }
 
 // src/rightflow-config/tools/result.ts
-async function run(env2, body) {
+function selectedFirmOf(session) {
+  return async () => {
+    const saved = await session.current();
+    return saved?.organizationId ? { name: saved.organizationName ?? saved.organizationId } : null;
+  };
+}
+async function run(env2, body, selectedFirm) {
   try {
     const out = await body();
     return { content: [{ type: "text", text: `${header(env2, out.firm, out.team ?? null)}
 ${out.text}` }] };
   } catch (err) {
+    const firm = await selectedFirm?.().catch(() => null);
     if (err instanceof UserFacingError) {
-      return { isError: true, content: [{ type: "text", text: `${header(env2)}
+      return { isError: true, content: [{ type: "text", text: `${header(env2, firm ?? null)}
 ${err.message}` }] };
     }
     console.error(err);
@@ -37138,7 +37145,7 @@ ${err.message}` }] };
       content: [
         {
           type: "text",
-          text: `${header(env2)}
+          text: `${header(env2, firm ?? null)}
 Something went wrong inside the plugin. The details are in the rightflow-config MCP server log (/mcp in Claude Code).`
         }
       ]
@@ -37151,6 +37158,7 @@ var MIN_NODE = [22, 18];
 function registerSessionTools(server2, ctx) {
   const { session, api } = ctx;
   const env2 = session.env;
+  const go = (body) => run(env2, body, selectedFirmOf(session));
   let pending = null;
   server2.registerTool(
     "status",
@@ -37160,7 +37168,7 @@ function registerSessionTools(server2, ctx) {
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    () => run(env2, async () => {
+    () => go(async () => {
       const lines = [`Plugin version ${ctx.version}. ${nodeCheck()}`];
       const saved = await session.current();
       if (!saved) {
@@ -37187,7 +37195,7 @@ function registerSessionTools(server2, ctx) {
       },
       annotations: { openWorldHint: true }
     },
-    ({ firm }) => run(env2, async () => {
+    ({ firm }) => go(async () => {
       if (!pending) {
         pending = await session.startSignIn();
         return { firm: null, text: showCode(env2.label, pending) };
@@ -37215,7 +37223,7 @@ ${showCode(env2.label, current)}` };
       inputSchema: { firm: external_exports.string().min(1).max(200).describe("Name or id of the firm.") },
       annotations: { openWorldHint: true }
     },
-    ({ firm }) => run(env2, async () => {
+    ({ firm }) => go(async () => {
       const saved = await session.current();
       if (!saved) throw new UserFacingError(`Not signed in to ${env2.label}. Call sign_in.`);
       return chooseFirm(session, api, saved, firm);
@@ -37229,7 +37237,7 @@ ${showCode(env2.label, current)}` };
       inputSchema: {},
       annotations: { destructiveHint: true, openWorldHint: true }
     },
-    () => run(env2, async () => {
+    () => go(async () => {
       const revoked = await session.signOut();
       return {
         firm: null,
@@ -37683,6 +37691,7 @@ var previewArg = external_exports.string().min(1).max(100).describe("The preview
 function registerTeamTools(server2, ctx) {
   const { session, api } = ctx;
   const env2 = session.env;
+  const go = (body) => run(env2, body, selectedFirmOf(session));
   const cwd = ctx.cwd ?? process.cwd();
   const previews = /* @__PURE__ */ new Map();
   async function firm() {
@@ -37771,7 +37780,7 @@ Pull the team again with replace: true before the next change.`;
       inputSchema: { lang: external_exports.string().min(2).max(10).optional().describe("Language for labels, e.g. en or de.") },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    ({ lang }) => run(env2, async () => {
+    ({ lang }) => go(async () => {
       const current = await firm();
       const ref = await get(`/setup/reference${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`);
       return { firm: current, text: renderReference(ref) };
@@ -37785,7 +37794,7 @@ Pull the team again with replace: true before the next change.`;
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    () => run(env2, async () => {
+    () => go(async () => {
       const current = await firm();
       const page = await get(`/setup/teams?limit=${TEAM_LIST_LIMIT}`);
       if (page.data.length === 0) {
@@ -37810,7 +37819,7 @@ Pull the team again with replace: true before the next change.`;
       },
       annotations: { openWorldHint: true }
     },
-    ({ team, folder, replace }) => run(env2, async () => {
+    ({ team, folder, replace }) => go(async () => {
       const current = await firm();
       const found = await resolveTeam(team);
       const bundle = await get(`/setup/teams/${encodeURIComponent(found.id)}/bundle`);
@@ -37850,7 +37859,7 @@ Change the files there, then call check_team with this folder.`
       },
       annotations: { openWorldHint: true }
     },
-    ({ folder, locale }) => run(env2, async () => {
+    ({ folder, locale }) => go(async () => {
       const current = await firm();
       let chosen = locale;
       if (!chosen) {
@@ -37885,7 +37894,7 @@ Change the files there, then call check_team with this folder.`
       inputSchema: { folder: folderArg, absorbRules: absorbArg, paths: pathsArg },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    ({ folder, absorbRules, paths }) => run(env2, async () => {
+    ({ folder, absorbRules, paths }) => go(async () => {
       const current = await firm();
       const { folder: dir, marker } = await pulledFolder(folder, current);
       const files = await readTeamFiles(dir);
@@ -37919,7 +37928,7 @@ Change the files there, then call check_team with this folder.`
       inputSchema: { folder: folderArg, message: messageArg, previewId: previewArg, absorbRules: absorbArg },
       annotations: { destructiveHint: true, openWorldHint: true }
     },
-    ({ folder, message, previewId, absorbRules }) => run(env2, async () => {
+    ({ folder, message, previewId, absorbRules }) => go(async () => {
       const current = await firm();
       const { folder: dir, marker } = await pulledFolder(folder, current);
       const files = await readTeamFiles(dir);
@@ -37959,7 +37968,7 @@ Change the files there, then call check_team with this folder.`
       inputSchema: { team: teamArg },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    ({ team }) => run(env2, async () => {
+    ({ team }) => go(async () => {
       const current = await firm();
       const found = await resolveTeam(team);
       const learnings = await get(`/setup/teams/${encodeURIComponent(found.id)}/learnings`);
@@ -37978,7 +37987,7 @@ Change the files there, then call check_team with this folder.`
       },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    ({ team, page, limit }) => run(env2, async () => {
+    ({ team, page, limit }) => go(async () => {
       const current = await firm();
       const found = await resolveTeam(team);
       const list = await get(
@@ -38005,7 +38014,7 @@ Change the files there, then call check_team with this folder.`
       inputSchema: { team: teamArg, number: external_exports.number().int().min(1), paths: pathsArg },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    ({ team, number: number4, paths }) => run(env2, async () => {
+    ({ team, number: number4, paths }) => go(async () => {
       const current = await firm();
       const found = await resolveTeam(team);
       const detail = await get(`/setup/teams/${encodeURIComponent(found.id)}/revisions/${number4}`);
@@ -38020,7 +38029,7 @@ Change the files there, then call check_team with this folder.`
       inputSchema: { team: teamArg, number: external_exports.number().int().min(1), paths: pathsArg },
       annotations: { readOnlyHint: true, openWorldHint: true }
     },
-    ({ team, number: number4, paths }) => run(env2, async () => {
+    ({ team, number: number4, paths }) => go(async () => {
       const current = await firm();
       const found = await resolveTeam(team);
       const teamPath = `/setup/teams/${encodeURIComponent(found.id)}`;
@@ -38049,7 +38058,7 @@ Change the files there, then call check_team with this folder.`
       inputSchema: { team: teamArg, number: external_exports.number().int().min(1), message: messageArg, previewId: previewArg },
       annotations: { destructiveHint: true, openWorldHint: true }
     },
-    ({ team, number: number4, message, previewId }) => run(env2, async () => {
+    ({ team, number: number4, message, previewId }) => go(async () => {
       const current = await firm();
       const found = await resolveTeam(team);
       const preview = previews.get(previewId);
