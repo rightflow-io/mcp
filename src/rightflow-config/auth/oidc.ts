@@ -3,11 +3,12 @@ import { UserFacingError } from "../errors.ts";
 
 export type Fetch = typeof fetch;
 
-// The same request rightflow's own web app makes: organization claims in the ID
-// token, a refresh token, and the organizations resource so that a refresh can
-// then be exchanged for one firm's token.
-const SCOPE = "openid profile email offline_access urn:logto:scope:organizations";
+// Only what the plugin reads: a refresh token, the firms on the ID token, and
+// the organizations resource so that a refresh can be exchanged for one firm's
+// token.
+const SCOPE = "openid offline_access urn:logto:scope:organizations";
 const ORGANIZATIONS_RESOURCE = "urn:logto:resource:organizations";
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 /**
  * Token requests run while the sign-in lock is held, so they must end well before
@@ -23,6 +24,25 @@ export interface TokenSet {
   idToken?: string;
 }
 
+/** A sign-in waiting for the person to confirm its code in a browser. */
+export interface DeviceAuthorization {
+  deviceCode: string;
+  userCode: string;
+  /** Where the person enters the code. */
+  verificationUri: string;
+  /** The same page with the code filled in, when the service offers one. */
+  verificationUriComplete: string | null;
+  /** Epoch milliseconds. */
+  expiresAt: number;
+  intervalMs: number;
+}
+
+export type DevicePoll =
+  | { status: "done"; tokens: TokenSet }
+  | { status: "pending" }
+  /** The service asks to be polled less often. */
+  | { status: "slow_down" };
+
 export function requireClientId(env: Environment): string {
   if (!env.clientId) {
     throw new UserFacingError(
@@ -33,40 +53,58 @@ export function requireClientId(env: Environment): string {
   return env.clientId;
 }
 
-export function authorizationUrl(
-  env: Environment,
-  params: { redirectUri: string; challenge: string; state: string },
-): string {
-  const query = new URLSearchParams({
-    client_id: requireClientId(env),
-    redirect_uri: params.redirectUri,
-    response_type: "code",
-    scope: SCOPE,
-    resource: ORGANIZATIONS_RESOURCE,
-    code_challenge: params.challenge,
-    code_challenge_method: "S256",
-    state: params.state,
-    prompt: "consent",
-  });
-  return `${env.authUrl}/oidc/auth?${query.toString()}`;
+/**
+ * Starts a device sign-in (RFC 8628). It needs nothing to come back to this
+ * machine, so it works the same where the plugin runs without the person's
+ * browser — a cloud session — as on their own computer.
+ */
+export async function startDeviceAuthorization(env: Environment, fetchImpl: Fetch = fetch): Promise<DeviceAuthorization> {
+  const clientId = requireClientId(env);
+  const endpoint = await deviceAuthorizationEndpoint(env, fetchImpl);
+  const { res, json } = await post(env, endpoint, { client_id: clientId, scope: SCOPE, resource: ORGANIZATIONS_RESOURCE }, fetchImpl);
+  if (!res.ok) throw refusal(env, res.status, json);
+  if (
+    typeof json !== "object" ||
+    json === null ||
+    !("device_code" in json) ||
+    !("user_code" in json) ||
+    !("verification_uri" in json) ||
+    typeof json.device_code !== "string" ||
+    typeof json.user_code !== "string" ||
+    typeof json.verification_uri !== "string"
+  ) {
+    throw new Error("Malformed device authorization response.");
+  }
+  const d = json as Record<string, unknown>;
+  const expiresIn = typeof d.expires_in === "number" ? d.expires_in : 600;
+  const interval = typeof d.interval === "number" ? d.interval : 5;
+  return {
+    deviceCode: json.device_code,
+    userCode: json.user_code,
+    verificationUri: json.verification_uri,
+    verificationUriComplete: typeof d.verification_uri_complete === "string" ? d.verification_uri_complete : null,
+    expiresAt: Date.now() + expiresIn * 1000,
+    intervalMs: interval * 1000,
+  };
 }
 
-export async function exchangeCode(
-  env: Environment,
-  params: { code: string; verifier: string; redirectUri: string },
-  fetchImpl: Fetch = fetch,
-): Promise<TokenSet> {
-  return tokenRequest(
-    env,
-    {
-      grant_type: "authorization_code",
-      client_id: requireClientId(env),
-      code: params.code,
-      code_verifier: params.verifier,
-      redirect_uri: params.redirectUri,
-    },
-    fetchImpl,
-  );
+/** One poll of a device sign-in. Ends in tokens, a wait, or a refusal the person can read. */
+export async function pollDeviceToken(env: Environment, deviceCode: string, fetchImpl: Fetch = fetch): Promise<DevicePoll> {
+  const body = { grant_type: DEVICE_CODE_GRANT, client_id: requireClientId(env), device_code: deviceCode };
+  const { res, json } = await post(env, `${env.authUrl}/oidc/token`, body, fetchImpl);
+  if (res.ok) return { status: "done", tokens: tokenSet(env, json, undefined) };
+  switch (errorOf(json).code) {
+    case "authorization_pending":
+      return { status: "pending" };
+    case "slow_down":
+      return { status: "slow_down" };
+    case "expired_token":
+      throw new UserFacingError("The sign-in code expired before it was confirmed. Call sign_in to get a new one.");
+    case "access_denied":
+      throw new UserFacingError("The sign-in was declined in the browser. Call sign_in to try again.");
+    default:
+      throw refusal(env, res.status, json);
+  }
 }
 
 /** A token for one firm, from the refresh token. The sign-in service may rotate the refresh token. */
@@ -104,35 +142,60 @@ export async function revokeRefreshToken(env: Environment, refreshToken: string,
 }
 
 async function tokenRequest(env: Environment, body: Record<string, string>, fetchImpl: Fetch): Promise<TokenSet> {
-  let res: Response;
-  let text: string;
+  const { res, json } = await post(env, `${env.authUrl}/oidc/token`, body, fetchImpl);
+  if (!res.ok) {
+    if (errorOf(json).code === "invalid_grant") {
+      throw new UserFacingError(`Your sign-in to ${env.label} has expired. Call sign_in to sign in again.`);
+    }
+    throw refusal(env, res.status, json);
+  }
+  return tokenSet(env, json, body.refresh_token);
+}
+
+async function deviceAuthorizationEndpoint(env: Environment, fetchImpl: Fetch): Promise<string> {
+  let json: unknown;
   try {
-    res = await fetchImpl(`${env.authUrl}/oidc/token`, {
+    const res = await fetchImpl(`${env.authUrl}/oidc/.well-known/openid-configuration`, {
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
+    });
+    json = res.ok ? parseOrNull(await res.text()) : null;
+  } catch {
+    throw unreachable(env);
+  }
+  if (typeof json === "object" && json !== null && "device_authorization_endpoint" in json) {
+    const endpoint = json.device_authorization_endpoint;
+    if (typeof endpoint === "string" && endpoint.startsWith(`${env.authUrl}/`)) return endpoint;
+  }
+  throw new UserFacingError(`The ${env.label} sign-in service does not offer sign-in with a code.`);
+}
+
+async function post(
+  env: Environment,
+  url: string,
+  body: Record<string, string>,
+  fetchImpl: Fetch,
+): Promise<{ res: Response; json: unknown }> {
+  try {
+    const res = await fetchImpl(url, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams(body),
       signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
     });
-    text = await res.text();
+    // Parse errors quote their input, and this input can be a token: never let one surface.
+    return { res, json: parseOrNull(await res.text()) };
   } catch {
-    throw new UserFacingError(`Could not reach the ${env.label} sign-in service (${env.authUrl}). Check the connection and try again.`);
+    throw unreachable(env);
   }
-  if (!res.ok) {
-    // The service's error code is safe to show; the body is not echoed further.
-    const code = safeErrorCode(text);
-    if (code === "invalid_grant") {
-      throw new UserFacingError(`Your sign-in to ${env.label} has expired. Call sign_in to sign in again.`);
-    }
-    throw new UserFacingError(`The ${env.label} sign-in service refused the request (${res.status}${code ? `, ${code}` : ""}).`);
-  }
-  // Parse errors quote their input, and this input is a token: never let one surface.
-  const json = parseOrNull(text);
+}
+
+function tokenSet(env: Environment, json: unknown, previousRefreshToken: string | undefined): TokenSet {
   if (typeof json !== "object" || json === null) throw new Error("Malformed token response.");
   const t = json as Record<string, unknown>;
   if (typeof t.access_token !== "string" || typeof t.expires_in !== "number") {
     throw new Error("Malformed token response.");
   }
-  const refreshToken = typeof t.refresh_token === "string" ? t.refresh_token : body.refresh_token;
+  const refreshToken = typeof t.refresh_token === "string" ? t.refresh_token : previousRefreshToken;
   if (!refreshToken) {
     throw new UserFacingError(`The ${env.label} sign-in service did not grant a lasting sign-in. Try sign_in again.`);
   }
@@ -144,12 +207,28 @@ async function tokenRequest(env: Environment, body: Record<string, string>, fetc
   };
 }
 
-function safeErrorCode(text: string): string | null {
-  const parsed = parseOrNull(text);
-  if (typeof parsed === "object" && parsed !== null && "error" in parsed && typeof parsed.error === "string") {
-    return /^[a-z_]{1,64}$/.test(parsed.error) ? parsed.error : null;
-  }
-  return null;
+function unreachable(env: Environment): UserFacingError {
+  return new UserFacingError(`Could not reach the ${env.label} sign-in service (${env.authUrl}). Check the connection and try again.`);
+}
+
+/**
+ * The service's own words for a refusal. Its error code and description name a
+ * setting ("requested scope is not allowed"), never a credential, and without
+ * them a refusal cannot be told apart from the next one.
+ */
+function refusal(env: Environment, status: number, json: unknown): UserFacingError {
+  const { code, description } = errorOf(json);
+  const detail = [code, description].filter(Boolean).join(": ");
+  return new UserFacingError(`The ${env.label} sign-in service refused the request (${status}${detail ? `, ${detail}` : ""}).`);
+}
+
+function errorOf(json: unknown): { code: string | null; description: string | null } {
+  if (typeof json !== "object" || json === null) return { code: null, description: null };
+  const e = json as Record<string, unknown>;
+  const code = typeof e.error === "string" && /^[a-z_]{1,64}$/.test(e.error) ? e.error : null;
+  const description =
+    typeof e.error_description === "string" ? e.error_description.replace(/[^\x20-\x7e]/g, " ").slice(0, 200).trim() || null : null;
+  return { code, description };
 }
 
 function parseOrNull(text: string): unknown {

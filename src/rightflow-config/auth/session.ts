@@ -1,15 +1,14 @@
 import type { Environment } from "../env.ts";
 import { UserFacingError } from "../errors.ts";
-import { awaitCallback } from "./loopback.ts";
 import {
-  authorizationUrl,
-  exchangeCode,
   organizationIdsFromIdToken,
   organizationToken,
+  pollDeviceToken,
   revokeRefreshToken,
+  startDeviceAuthorization,
   type Fetch,
+  type TokenSet,
 } from "./oidc.ts";
-import { createPkcePair, createState } from "./pkce.ts";
 import type { SessionStore, StoredSession } from "./store.ts";
 
 /** Refresh this long before expiry, so a token never runs out in the middle of a call. */
@@ -17,10 +16,21 @@ const EXPIRY_MARGIN_MS = 60_000;
 
 export interface SessionOptions {
   fetch?: Fetch;
-  /** Opens the sign-in page; failing to open is not an error, the URL is also returned. */
+  /** Opens the sign-in page; failing to open is not an error, the link and code are also returned. */
   openBrowser?: (url: string) => void;
-  callbackPorts?: readonly number[];
-  callbackTimeoutMs?: number;
+  /** Overrides the service's polling interval; for tests. */
+  pollIntervalMs?: number;
+}
+
+/** A sign-in waiting for the person to confirm its code. */
+export interface PendingSignIn {
+  userCode: string;
+  /** The page to open; carries the code where the service allows it. */
+  url: string;
+  /** Where the code is typed in by hand. */
+  verificationUri: string;
+  /** Never rejects, so an outcome nobody is waiting for is kept rather than reported as unhandled. */
+  done: Promise<{ ok: true; session: StoredSession } | { ok: false; error: unknown }>;
 }
 
 /**
@@ -46,31 +56,39 @@ export class Session {
   }
 
   /**
-   * Runs the browser sign-in and keeps the login. `onUrl` receives the page to
-   * open before the wait starts, so the caller can show it if no browser opens.
+   * Starts a sign-in with a code and returns as soon as there is a code to show:
+   * the person confirms it in any browser, so this works where no browser can
+   * reach the plugin. `done` settles once they have, or the code has expired.
    * No firm is selected yet: which one is a decision the person makes.
    */
-  async signIn(onUrl: (url: string) => void = () => undefined): Promise<StoredSession> {
-    const pkce = createPkcePair();
-    const state = createState();
-    const callback = await awaitCallback(state, {
-      ...(this.opts.callbackPorts ? { ports: this.opts.callbackPorts } : {}),
-      ...(this.opts.callbackTimeoutMs ? { timeoutMs: this.opts.callbackTimeoutMs } : {}),
-    });
-    let code: string;
-    try {
-      const url = authorizationUrl(this.env, { redirectUri: callback.redirectUri, challenge: pkce.challenge, state });
-      onUrl(url);
-      this.opts.openBrowser?.(url);
-      code = await callback.code;
-    } finally {
-      callback.close();
+  async startSignIn(): Promise<PendingSignIn> {
+    const device = await startDeviceAuthorization(this.env, this.fetchImpl);
+    const url = device.verificationUriComplete ?? device.verificationUri;
+    this.opts.openBrowser?.(url);
+    const done = this.awaitDevice(device.deviceCode, device.expiresAt, this.opts.pollIntervalMs ?? device.intervalMs)
+      .then((tokens) => this.keepLogin(tokens))
+      .then(
+        (session) => ({ ok: true as const, session }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+    return { userCode: device.userCode, url, verificationUri: device.verificationUri, done };
+  }
+
+  private async awaitDevice(deviceCode: string, expiresAt: number, intervalMs: number): Promise<TokenSet> {
+    let interval = intervalMs;
+    for (;;) {
+      await delay(interval);
+      if (Date.now() > expiresAt) {
+        throw new UserFacingError("The sign-in code expired before it was confirmed. Call sign_in to get a new one.");
+      }
+      const poll = await pollDeviceToken(this.env, deviceCode, this.fetchImpl);
+      if (poll.status === "done") return poll.tokens;
+      // RFC 8628: each slow_down adds five seconds for the rest of this sign-in.
+      if (poll.status === "slow_down") interval += 5_000;
     }
-    const tokens = await exchangeCode(
-      this.env,
-      { code, verifier: pkce.verifier, redirectUri: callback.redirectUri },
-      this.fetchImpl,
-    );
+  }
+
+  private async keepLogin(tokens: TokenSet): Promise<StoredSession> {
     const organizationIds = tokens.idToken ? organizationIdsFromIdToken(tokens.idToken) : [];
     if (organizationIds.length === 0) {
       throw new UserFacingError(`This login does not belong to any firm in ${this.env.label}.`);
@@ -182,4 +200,9 @@ function withFirm(session: StoredSession): { token: string; session: StoredSessi
 
 function noFirm(env: Environment): UserFacingError {
   return new UserFacingError(`Signed in to ${env.label}, but no firm is selected. Call use_firm.`);
+}
+
+// Not unref'd: a sign-in in progress is a reason to stay alive, and it ends when its code expires.
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }

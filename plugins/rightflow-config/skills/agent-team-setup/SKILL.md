@@ -15,9 +15,10 @@ files and fields, unless they ask.
 1. **Call `status`.** Every answer from this plugin starts with a line such as
    `[rightflow Production · firm "…" · team "…"]`. Name the environment and firm
    whenever you report a result. Stop if it is not the one the person meant.
-2. **Not signed in?** Call `sign_in`. A browser page opens. If it does not,
-   give the person the link from the answer, and call `sign_in` again once they
-   are done.
+2. **Not signed in?** Call `sign_in`. It answers at once with a link and a
+   code. Show the person both exactly as given: they open the link in any
+   browser, check that the page shows the same code, and sign in. Once they say
+   they are done, call `sign_in` again; it waits for the confirmation.
 3. **Several firms?** Ask which one, then call `use_firm`. Never pick one
    yourself.
 4. **Check access.** `status` says whether this person may change agent teams
