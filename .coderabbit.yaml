@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# This repository is public, and so is every comment a review bot leaves on it.
+# Reviews run only when asked for with `@coderabbitai review`.
+reviews:
+  auto_review:
+    enabled: false
+  finishing_touches:
+    unit_tests:
+      enabled: false

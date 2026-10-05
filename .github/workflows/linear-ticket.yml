@@ -11,10 +11,11 @@ name: Linear ticket
 #     the ticket carries what actually shipped without anyone copying it across.
 #
 # The same logic as the linear-ticket workflow of the daemon repositories, with
-# three differences that follow from this repository being public: the action is
+# four differences that follow from this repository being public: the action is
 # pinned by commit, a reference is the identifier alone (a tracker URL is refused
-# by the public-safety check), and dependency bumps by Dependabot are exempt —
-# they are no person's change and carry no ticket.
+# by the public-safety check), the run's log and summary name a ticket by its
+# identifier only (they are public too), and dependency bumps by Dependabot are
+# exempt — they are no person's change and carry no ticket.
 #
 # The script is inline rather than a file in the repository: a `pull_request`
 # workflow always runs the pull request's own copy of this file, so a checked-out
@@ -199,14 +200,12 @@ jobs:
               return;
             }
 
+            // Run logs and summaries are as public as the repository: the
+            // identifier only, never the ticket's title or its link.
             if (!merged) {
               for (const issue of resolved) {
-                core.notice(`${issue.identifier} — ${issue.title} (from the ${found.get(issue.identifier)})`);
+                core.notice(`${issue.identifier} exists (named in the ${found.get(issue.identifier)}).`);
               }
-              core.summary.addRaw(
-                resolved.map((i) => `- [${i.identifier}](${i.url}) — ${i.title}`).join('\n'),
-              );
-              await core.summary.write();
               return;
             }
 
@@ -234,5 +233,5 @@ jobs:
                 continue;
               }
               await addComment(issue.id, body);
-              core.notice(`Posted the PR description to ${issue.identifier} (${issue.url}).`);
+              core.notice(`Posted the PR description to ${issue.identifier}.`);
             }

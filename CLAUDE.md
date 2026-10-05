@@ -190,6 +190,12 @@ and validates the plugin and marketplace manifests with `claude plugin validate
 --strict`. Change a dependency or the source, and commit the rebuilt `dist/` in
 the same change.
 
+`main` changes only through a pull request that is squash-merged once `plugin`,
+`files`, `commits and description` and `ticket linked` are green and every
+review thread is resolved. It is never force-pushed or deleted. The ruleset that
+enforces this is `.github/rulesets/main.json`. Change it there and import it again
+under Settings → Rules → Rulesets, so the file and the setting never disagree.
+
 ## Closing a ticket
 
 Before you move a ticket to Done or Canceled, post a summary comment on it: the

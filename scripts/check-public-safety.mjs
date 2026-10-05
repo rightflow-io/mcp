@@ -31,6 +31,8 @@ const ALLOWED_EMAIL = [
   /@users\.noreply\.github\.com$/i,
   /^noreply@(anthropic|github)\.com$/i,
   /^git@github\.com$/i,
+  // Dependabot signs its commits off with GitHub's support address.
+  /^support@github\.com$/i,
 ];
 
 // The public face of rightflow. Any other subdomain is internal until someone

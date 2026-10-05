@@ -16,3 +16,9 @@ updates:
     groups:
       dependencies:
         patterns: ["*"]
+    ignore:
+      # The types follow the oldest Node.js the plugin supports (package.json
+      # engines), not the newest: newer types would let code compile that a
+      # supported Node.js cannot run.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
