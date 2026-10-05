@@ -1,0 +1,40 @@
+name: Something does not work
+description: The plugin behaves differently from what you expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This issue is public.** Do not paste names, e-mail addresses, your firm's name, case numbers, contents of your team, tokens, or screenshots that show any of these. Describe the steps with placeholders instead. A security problem is reported privately — see SECURITY.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you ask Claude to do, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      description: Shown by /plugin in Claude Code.
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Production
+        - Development
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Public safety
+      options:
+        - label: This issue contains no personal data, no firm or case details and no credentials.
+          required: true

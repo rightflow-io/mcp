@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "rightflow-config": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"],
+      "env": {
+        "RF_CONFIG_ENV": "${user_config.environment}",
+        "RF_CONFIG_DATA": "${CLAUDE_PLUGIN_DATA}"
+      }
+    }
+  }
+}

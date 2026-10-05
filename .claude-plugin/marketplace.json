@@ -1,0 +1,16 @@
+{
+  "name": "rightflow",
+  "owner": {
+    "name": "rightflow"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for rightflow."
+  },
+  "plugins": [
+    {
+      "name": "rightflow-config",
+      "source": "./plugins/rightflow-config",
+      "description": "Set up and change your firm's own agent team in rightflow: load it, change it, review every change, submit it, and see what changed when."
+    }
+  ]
+}

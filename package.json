@@ -1,0 +1,26 @@
+{
+  "name": "rightflow-mcp",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code plugins for rightflow. The built plugins live under plugins/; their source under src/.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test 'src/**/*.test.ts' 'scripts/*.test.mjs'",
+    "build": "node scripts/build.mjs",
+    "check:public": "node scripts/check-public-safety.mjs",
+    "validate": "npm run typecheck && npm test && npm run build && npm run check:public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

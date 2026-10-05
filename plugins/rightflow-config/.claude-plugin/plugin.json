@@ -1,0 +1,29 @@
+{
+  "name": "rightflow-config",
+  "displayName": "rightflow config",
+  "version": "0.1.0",
+  "description": "Set up and change your firm's own agent team in rightflow: load it, change it, review every change, submit it, and see what changed when.",
+  "author": {
+    "name": "rightflow"
+  },
+  "homepage": "https://github.com/rightflow-io/mcp",
+  "repository": "https://github.com/rightflow-io/mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "rightflow",
+    "agent team",
+    "configuration"
+  ],
+  "userConfig": {
+    "environment": {
+      "type": "string",
+      "title": "rightflow environment",
+      "description": "Which rightflow the plugin signs in to. Production unless rightflow asked you to use development.",
+      "options": [
+        "production",
+        "development"
+      ],
+      "default": "production"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Built bundles: collapsed in review, rebuilt and compared in CI.
+plugins/*/dist/** linguist-generated=true
