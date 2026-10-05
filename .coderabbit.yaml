@@ -4,6 +4,8 @@
 reviews:
   auto_review:
     enabled: false
+  # No "review skipped" notice on every pull request.
+  review_status: false
   finishing_touches:
     unit_tests:
       enabled: false
