@@ -2088,9 +2088,9 @@ var require_json_schema_traverse = __commonJS({
       cb = opts.cb || cb;
       var pre = typeof cb == "function" ? cb : cb.pre || function() {
       };
-      var post = cb.post || function() {
+      var post2 = cb.post || function() {
       };
-      _traverse(opts, pre, post, schema, "", schema);
+      _traverse(opts, pre, post2, schema, "", schema);
     };
     traverse.keywords = {
       additionalItems: true,
@@ -2136,7 +2136,7 @@ var require_json_schema_traverse = __commonJS({
       maxProperties: true,
       minProperties: true
     };
-    function _traverse(opts, pre, post, schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex) {
+    function _traverse(opts, pre, post2, schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex) {
       if (schema && typeof schema == "object" && !Array.isArray(schema)) {
         pre(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
         for (var key in schema) {
@@ -2144,18 +2144,18 @@ var require_json_schema_traverse = __commonJS({
           if (Array.isArray(sch)) {
             if (key in traverse.arrayKeywords) {
               for (var i = 0; i < sch.length; i++)
-                _traverse(opts, pre, post, sch[i], jsonPtr + "/" + key + "/" + i, rootSchema, jsonPtr, key, schema, i);
+                _traverse(opts, pre, post2, sch[i], jsonPtr + "/" + key + "/" + i, rootSchema, jsonPtr, key, schema, i);
             }
           } else if (key in traverse.propsKeywords) {
             if (sch && typeof sch == "object") {
               for (var prop in sch)
-                _traverse(opts, pre, post, sch[prop], jsonPtr + "/" + key + "/" + escapeJsonPtr(prop), rootSchema, jsonPtr, key, schema, prop);
+                _traverse(opts, pre, post2, sch[prop], jsonPtr + "/" + key + "/" + escapeJsonPtr(prop), rootSchema, jsonPtr, key, schema, prop);
             }
           } else if (key in traverse.keywords || opts.allKeys && !(key in traverse.skipKeywords)) {
-            _traverse(opts, pre, post, sch, jsonPtr + "/" + key, rootSchema, jsonPtr, key, schema);
+            _traverse(opts, pre, post2, sch, jsonPtr + "/" + key, rootSchema, jsonPtr, key, schema);
           }
         }
-        post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+        post2(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
       }
     }
     function escapeJsonPtr(str) {
@@ -4792,11 +4792,11 @@ var require_core = __commonJS({
     }
     function addRule(keyword, definition, dataType) {
       var _a3;
-      const post = definition === null || definition === void 0 ? void 0 : definition.post;
-      if (dataType && post)
+      const post2 = definition === null || definition === void 0 ? void 0 : definition.post;
+      if (dataType && post2)
         throw new Error('keyword with "post" flag cannot have "type"');
       const { RULES } = this;
-      let ruleGroup = post ? RULES.post : RULES.rules.find(({ type: t }) => t === dataType);
+      let ruleGroup = post2 ? RULES.post : RULES.rules.find(({ type: t }) => t === dataType);
       if (!ruleGroup) {
         ruleGroup = { type: dataType, rules: [] };
         RULES.rules.push(ruleGroup);
@@ -36633,92 +36633,10 @@ function isRecord(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-// src/rightflow-config/auth/loopback.ts
-import { createServer } from "node:http";
-var CALLBACK_PORTS = [53682, 53683, 53684, 53685, 53686, 53687, 53688, 53689, 53690, 53691];
-async function awaitCallback(expectedState, opts = {}) {
-  const ports = opts.ports ?? CALLBACK_PORTS;
-  for (const port of ports) {
-    try {
-      return await listen(port, expectedState, opts.timeoutMs ?? 5 * 6e4);
-    } catch (err) {
-      if (typeof err === "object" && err !== null && "code" in err && err.code === "EADDRINUSE") continue;
-      throw err;
-    }
-  }
-  throw new UserFacingError(
-    `Could not start the sign-in callback: ports ${ports[0]}\u2013${ports[ports.length - 1]} are all in use on this machine.`
-  );
-}
-function listen(port, expectedState, timeoutMs) {
-  return new Promise((resolveReady, rejectReady) => {
-    let settle2;
-    const code = new Promise((resolve2, reject) => {
-      settle2 = { resolve: resolve2, reject };
-    });
-    code.catch(() => void 0);
-    let timer;
-    const server2 = createServer((req, res) => {
-      const url2 = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
-      if (url2.pathname !== "/callback") {
-        res.writeHead(404).end();
-        return;
-      }
-      if (url2.searchParams.get("state") !== expectedState) {
-        respond(res, 400, "This answer does not belong to the sign-in in progress.");
-        return;
-      }
-      const error62 = url2.searchParams.get("error");
-      const received = url2.searchParams.get("code");
-      let outcome;
-      if (error62) outcome = { ok: false, message: `The sign-in was not completed (${error62}).` };
-      else if (!received) outcome = { ok: false, message: "The sign-in answer carried no code." };
-      else outcome = { ok: true, code: received };
-      respond(
-        res,
-        outcome.ok ? 200 : 400,
-        outcome.ok ? "Signed in. You can close this window and return to Claude." : outcome.message
-      );
-      if (timer) clearTimeout(timer);
-      server2.close();
-      if (outcome.ok) settle2.resolve(outcome.code);
-      else settle2.reject(new UserFacingError(outcome.message));
-    });
-    server2.once("error", rejectReady);
-    server2.listen(port, "127.0.0.1", () => {
-      timer = setTimeout(() => {
-        server2.close();
-        settle2.reject(
-          new UserFacingError(`No sign-in arrived within ${Math.round(timeoutMs / 6e4)} minutes. Call sign_in to try again.`)
-        );
-      }, timeoutMs);
-      timer.unref();
-      resolveReady({
-        redirectUri: `http://127.0.0.1:${port}/callback`,
-        code,
-        close: () => {
-          if (timer) clearTimeout(timer);
-          server2.close();
-        }
-      });
-    });
-  });
-}
-function respond(res, status, message) {
-  res.writeHead(status, {
-    "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'"
-  });
-  res.end(`<!doctype html><meta charset="utf-8"><title>rightflow</title><p>${escapeHtml(message)}</p>`);
-}
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
 // src/rightflow-config/auth/oidc.ts
-var SCOPE = "openid profile email offline_access urn:logto:scope:organizations";
+var SCOPE = "openid offline_access urn:logto:scope:organizations";
 var ORGANIZATIONS_RESOURCE = "urn:logto:resource:organizations";
+var DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 var TOKEN_REQUEST_TIMEOUT_MS = 15e3;
 function requireClientId(env2) {
   if (!env2.clientId) {
@@ -36728,32 +36646,42 @@ function requireClientId(env2) {
   }
   return env2.clientId;
 }
-function authorizationUrl(env2, params) {
-  const query = new URLSearchParams({
-    client_id: requireClientId(env2),
-    redirect_uri: params.redirectUri,
-    response_type: "code",
-    scope: SCOPE,
-    resource: ORGANIZATIONS_RESOURCE,
-    code_challenge: params.challenge,
-    code_challenge_method: "S256",
-    state: params.state,
-    prompt: "consent"
-  });
-  return `${env2.authUrl}/oidc/auth?${query.toString()}`;
+async function startDeviceAuthorization(env2, fetchImpl = fetch) {
+  const clientId = requireClientId(env2);
+  const endpoint = await deviceAuthorizationEndpoint(env2, fetchImpl);
+  const { res, json: json2 } = await post(env2, endpoint, { client_id: clientId, scope: SCOPE, resource: ORGANIZATIONS_RESOURCE }, fetchImpl);
+  if (!res.ok) throw refusal(env2, res.status, json2);
+  if (typeof json2 !== "object" || json2 === null || !("device_code" in json2) || !("user_code" in json2) || !("verification_uri" in json2) || typeof json2.device_code !== "string" || typeof json2.user_code !== "string" || typeof json2.verification_uri !== "string") {
+    throw new Error("Malformed device authorization response.");
+  }
+  const d = json2;
+  const expiresIn = typeof d.expires_in === "number" ? d.expires_in : 600;
+  const interval = typeof d.interval === "number" ? d.interval : 5;
+  return {
+    deviceCode: json2.device_code,
+    userCode: json2.user_code,
+    verificationUri: json2.verification_uri,
+    verificationUriComplete: typeof d.verification_uri_complete === "string" ? d.verification_uri_complete : null,
+    expiresAt: Date.now() + expiresIn * 1e3,
+    intervalMs: interval * 1e3
+  };
 }
-async function exchangeCode(env2, params, fetchImpl = fetch) {
-  return tokenRequest(
-    env2,
-    {
-      grant_type: "authorization_code",
-      client_id: requireClientId(env2),
-      code: params.code,
-      code_verifier: params.verifier,
-      redirect_uri: params.redirectUri
-    },
-    fetchImpl
-  );
+async function pollDeviceToken(env2, deviceCode, fetchImpl = fetch) {
+  const body = { grant_type: DEVICE_CODE_GRANT, client_id: requireClientId(env2), device_code: deviceCode };
+  const { res, json: json2 } = await post(env2, `${env2.authUrl}/oidc/token`, body, fetchImpl);
+  if (res.ok) return { status: "done", tokens: tokenSet(env2, json2, void 0) };
+  switch (errorOf(json2).code) {
+    case "authorization_pending":
+      return { status: "pending" };
+    case "slow_down":
+      return { status: "slow_down" };
+    case "expired_token":
+      throw new UserFacingError("The sign-in code expired before it was confirmed. Call sign_in to get a new one.");
+    case "access_denied":
+      throw new UserFacingError("The sign-in was declined in the browser. Call sign_in to try again.");
+    default:
+      throw refusal(env2, res.status, json2);
+  }
 }
 async function organizationToken(env2, params, fetchImpl = fetch) {
   return tokenRequest(
@@ -36782,33 +36710,51 @@ async function revokeRefreshToken(env2, refreshToken, fetchImpl = fetch) {
   }
 }
 async function tokenRequest(env2, body, fetchImpl) {
-  let res;
-  let text;
+  const { res, json: json2 } = await post(env2, `${env2.authUrl}/oidc/token`, body, fetchImpl);
+  if (!res.ok) {
+    if (errorOf(json2).code === "invalid_grant") {
+      throw new UserFacingError(`Your sign-in to ${env2.label} has expired. Call sign_in to sign in again.`);
+    }
+    throw refusal(env2, res.status, json2);
+  }
+  return tokenSet(env2, json2, body.refresh_token);
+}
+async function deviceAuthorizationEndpoint(env2, fetchImpl) {
+  let json2;
   try {
-    res = await fetchImpl(`${env2.authUrl}/oidc/token`, {
+    const res = await fetchImpl(`${env2.authUrl}/oidc/.well-known/openid-configuration`, {
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS)
+    });
+    json2 = res.ok ? parseOrNull(await res.text()) : null;
+  } catch {
+    throw unreachable(env2);
+  }
+  if (typeof json2 === "object" && json2 !== null && "device_authorization_endpoint" in json2) {
+    const endpoint = json2.device_authorization_endpoint;
+    if (typeof endpoint === "string" && endpoint.startsWith(`${env2.authUrl}/`)) return endpoint;
+  }
+  throw new UserFacingError(`The ${env2.label} sign-in service does not offer sign-in with a code.`);
+}
+async function post(env2, url2, body, fetchImpl) {
+  try {
+    const res = await fetchImpl(url2, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams(body),
       signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS)
     });
-    text = await res.text();
+    return { res, json: parseOrNull(await res.text()) };
   } catch {
-    throw new UserFacingError(`Could not reach the ${env2.label} sign-in service (${env2.authUrl}). Check the connection and try again.`);
+    throw unreachable(env2);
   }
-  if (!res.ok) {
-    const code = safeErrorCode(text);
-    if (code === "invalid_grant") {
-      throw new UserFacingError(`Your sign-in to ${env2.label} has expired. Call sign_in to sign in again.`);
-    }
-    throw new UserFacingError(`The ${env2.label} sign-in service refused the request (${res.status}${code ? `, ${code}` : ""}).`);
-  }
-  const json2 = parseOrNull(text);
+}
+function tokenSet(env2, json2, previousRefreshToken) {
   if (typeof json2 !== "object" || json2 === null) throw new Error("Malformed token response.");
   const t = json2;
   if (typeof t.access_token !== "string" || typeof t.expires_in !== "number") {
     throw new Error("Malformed token response.");
   }
-  const refreshToken = typeof t.refresh_token === "string" ? t.refresh_token : body.refresh_token;
+  const refreshToken = typeof t.refresh_token === "string" ? t.refresh_token : previousRefreshToken;
   if (!refreshToken) {
     throw new UserFacingError(`The ${env2.label} sign-in service did not grant a lasting sign-in. Try sign_in again.`);
   }
@@ -36819,12 +36765,20 @@ async function tokenRequest(env2, body, fetchImpl) {
     ...typeof t.id_token === "string" ? { idToken: t.id_token } : {}
   };
 }
-function safeErrorCode(text) {
-  const parsed = parseOrNull(text);
-  if (typeof parsed === "object" && parsed !== null && "error" in parsed && typeof parsed.error === "string") {
-    return /^[a-z_]{1,64}$/.test(parsed.error) ? parsed.error : null;
-  }
-  return null;
+function unreachable(env2) {
+  return new UserFacingError(`Could not reach the ${env2.label} sign-in service (${env2.authUrl}). Check the connection and try again.`);
+}
+function refusal(env2, status, json2) {
+  const { code, description } = errorOf(json2);
+  const detail = [code, description].filter(Boolean).join(": ");
+  return new UserFacingError(`The ${env2.label} sign-in service refused the request (${status}${detail ? `, ${detail}` : ""}).`);
+}
+function errorOf(json2) {
+  if (typeof json2 !== "object" || json2 === null) return { code: null, description: null };
+  const e = json2;
+  const code = typeof e.error === "string" && /^[a-z_]{1,64}$/.test(e.error) ? e.error : null;
+  const description = typeof e.error_description === "string" ? e.error_description.replace(/[^\x20-\x7e]/g, " ").slice(0, 200).trim() || null : null;
+  return { code, description };
 }
 function parseOrNull(text) {
   try {
@@ -36840,16 +36794,6 @@ function organizationIdsFromIdToken(idToken) {
   if (typeof claims !== "object" || claims === null || !("organizations" in claims)) return [];
   const orgs = claims.organizations;
   return Array.isArray(orgs) ? orgs.filter((o) => typeof o === "string") : [];
-}
-
-// src/rightflow-config/auth/pkce.ts
-import { createHash, randomBytes } from "node:crypto";
-function createPkcePair() {
-  const verifier = randomBytes(32).toString("base64url");
-  return { verifier, challenge: createHash("sha256").update(verifier).digest("base64url") };
-}
-function createState() {
-  return randomBytes(16).toString("base64url");
 }
 
 // src/rightflow-config/auth/session.ts
@@ -36869,31 +36813,34 @@ var Session = class {
     return this.store.read();
   }
   /**
-   * Runs the browser sign-in and keeps the login. `onUrl` receives the page to
-   * open before the wait starts, so the caller can show it if no browser opens.
+   * Starts a sign-in with a code and returns as soon as there is a code to show:
+   * the person confirms it in any browser, so this works where no browser can
+   * reach the plugin. `done` settles once they have, or the code has expired.
    * No firm is selected yet: which one is a decision the person makes.
    */
-  async signIn(onUrl = () => void 0) {
-    const pkce = createPkcePair();
-    const state = createState();
-    const callback = await awaitCallback(state, {
-      ...this.opts.callbackPorts ? { ports: this.opts.callbackPorts } : {},
-      ...this.opts.callbackTimeoutMs ? { timeoutMs: this.opts.callbackTimeoutMs } : {}
-    });
-    let code;
-    try {
-      const url2 = authorizationUrl(this.env, { redirectUri: callback.redirectUri, challenge: pkce.challenge, state });
-      onUrl(url2);
-      this.opts.openBrowser?.(url2);
-      code = await callback.code;
-    } finally {
-      callback.close();
-    }
-    const tokens = await exchangeCode(
-      this.env,
-      { code, verifier: pkce.verifier, redirectUri: callback.redirectUri },
-      this.fetchImpl
+  async startSignIn() {
+    const device = await startDeviceAuthorization(this.env, this.fetchImpl);
+    const url2 = device.verificationUriComplete ?? device.verificationUri;
+    this.opts.openBrowser?.(url2);
+    const done = this.awaitDevice(device.deviceCode, device.expiresAt, this.opts.pollIntervalMs ?? device.intervalMs).then((tokens) => this.keepLogin(tokens)).then(
+      (session) => ({ ok: true, session }),
+      (error62) => ({ ok: false, error: error62 })
     );
+    return { userCode: device.userCode, url: url2, verificationUri: device.verificationUri, done };
+  }
+  async awaitDevice(deviceCode, expiresAt, intervalMs) {
+    let interval = intervalMs;
+    for (; ; ) {
+      await delay(interval);
+      if (Date.now() > expiresAt) {
+        throw new UserFacingError("The sign-in code expired before it was confirmed. Call sign_in to get a new one.");
+      }
+      const poll = await pollDeviceToken(this.env, deviceCode, this.fetchImpl);
+      if (poll.status === "done") return poll.tokens;
+      if (poll.status === "slow_down") interval += 5e3;
+    }
+  }
+  async keepLogin(tokens) {
     const organizationIds = tokens.idToken ? organizationIdsFromIdToken(tokens.idToken) : [];
     if (organizationIds.length === 0) {
       throw new UserFacingError(`This login does not belong to any firm in ${this.env.label}.`);
@@ -36993,6 +36940,9 @@ function withFirm(session) {
 }
 function noFirm(env2) {
   return new UserFacingError(`Signed in to ${env2.label}, but no firm is selected. Call use_firm.`);
+}
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 // src/rightflow-config/auth/store.ts
@@ -37109,8 +37059,7 @@ var ENVIRONMENTS = {
     label: "Production",
     apiUrl: "https://api.rightflow.one/api",
     authUrl: "https://auth.rightflow.one",
-    // Public by design (see `clientId` above): a native app's id, not a secret.
-    clientId: "212ae8jsht9sfm3qzhp8n"
+    clientId: null
   },
   development: {
     name: "development",
@@ -37118,7 +37067,7 @@ var ENVIRONMENTS = {
     apiUrl: "https://api.dev.rightflow.one/api",
     authUrl: "https://auth.dev.rightflow.one",
     // Public by design (see `clientId` above): a native app's id, not a secret.
-    clientId: "f7j5f9m7ziewtzmr6xshe"
+    clientId: "620e8xm971hkxcvx8hrlk"
   }
 };
 function resolveEnvironment(env2 = process.env) {
@@ -37232,26 +37181,26 @@ function registerSessionTools(server2, ctx) {
     "sign_in",
     {
       title: "Sign in to rightflow",
-      description: "Signs in to rightflow in the browser with your normal rightflow login, then selects your firm. If the login belongs to several firms, pass `firm` (its name or id) or call use_firm afterwards. If the browser sign-in is not finished within a minute and a half, this returns the link; call sign_in again once you are done.",
+      description: "Signs in to rightflow with your normal rightflow login, then selects your firm. The first call returns a link and a code at once: show both to the person, word for word. They open the link in any browser, check that the code matches, and sign in. Then call sign_in again; it waits for the confirmation. If the login belongs to several firms, pass `firm` (its name or id) or call use_firm afterwards.",
       inputSchema: {
         firm: external_exports.string().min(1).max(200).optional().describe("Name or id of the firm to work on.")
       },
       annotations: { openWorldHint: true }
     },
     ({ firm }) => run(env2, async () => {
-      const current = pending ?? (pending = await startSignIn(session));
+      if (!pending) {
+        pending = await session.startSignIn();
+        return { firm: null, text: showCode(env2.label, pending) };
+      }
+      const current = pending;
       const outcome = await Promise.race([
         current.done,
-        delay(ctx.signInWaitMs ?? 9e4).then(() => ({ ok: "waiting" }))
+        delay2(ctx.signInWaitMs ?? 9e4).then(() => ({ ok: "waiting" }))
       ]);
       if (outcome.ok === "waiting") {
-        return {
-          firm: null,
-          text: `A ${env2.label} sign-in page should have opened in your browser. If it did not, open this link:
-${current.url}
+        return { firm: null, text: `Not confirmed yet.
 
-Once you have signed in, call sign_in again.`
-        };
+${showCode(env2.label, current)}` };
       }
       if (pending === current) pending = null;
       if (!outcome.ok) throw outcome.error;
@@ -37289,21 +37238,14 @@ Once you have signed in, call sign_in again.`
     })
   );
 }
-async function startSignIn(session) {
-  let url2 = "";
-  let urlReady;
-  const ready = new Promise((r) => {
-    urlReady = r;
-  });
-  const done = session.signIn((u) => {
-    url2 = u;
-    urlReady();
-  }).then(
-    (s) => ({ ok: true, session: s }),
-    (error62) => ({ ok: false, error: error62 })
-  );
-  await Promise.race([ready, done]);
-  return { done, url: url2 };
+function showCode(label, p) {
+  const manual = p.url === p.verificationUri ? "" : ` (or open ${p.verificationUri} and type the code)`;
+  return `To sign in to ${label}, open this link in any browser${manual}:
+${p.url}
+
+Code: ${p.userCode}
+
+Check that the page shows this code, then sign in with your rightflow login. Afterwards, call sign_in again.`;
 }
 async function chooseFirm(session, api, saved, query) {
   const probeOrg = saved.organizationId ?? saved.organizationIds[0];
@@ -37344,15 +37286,15 @@ function nodeCheck() {
   const ok2 = major > MIN_NODE[0] || major === MIN_NODE[0] && minor >= MIN_NODE[1];
   return ok2 ? `Node.js ${process.versions.node}.` : `Node.js ${process.versions.node} is older than ${MIN_NODE.join(".")}; update Node.js before relying on this plugin.`;
 }
-function delay(ms) {
+function delay2(ms) {
   return new Promise((r) => setTimeout(r, ms).unref());
 }
 
 // src/rightflow-config/tools/team-tools.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 
 // src/rightflow-config/folder.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash } from "node:crypto";
 import { lstat, mkdir as mkdir2, readdir, readFile as readFile2, rm as rm2, rmdir, writeFile as writeFile2 } from "node:fs/promises";
 import { dirname, isAbsolute, join as join3, posix, relative, resolve, sep } from "node:path";
 var MARKER_DIR = ".rightflow";
@@ -37366,7 +37308,7 @@ function resolveFolder(folder, cwd = process.cwd()) {
   return resolve(cwd, folder);
 }
 function sha256(text) {
-  return createHash2("sha256").update(text, "utf8").digest("hex");
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 function hashFiles(files) {
   return Object.fromEntries(Object.entries(files).map(([path, content]) => [path, sha256(content)]));
@@ -38149,7 +38091,7 @@ Nothing was changed.`;
   return isRecord(detail) ? renderRefusedApply(detail) : serverMessage(res.body) ?? "rightflow did not apply the change.";
 }
 function digest(value) {
-  return createHash3("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
+  return createHash2("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
 // src/rightflow-config/server.ts

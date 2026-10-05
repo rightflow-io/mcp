@@ -1,7 +1,7 @@
 {
   "name": "rightflow-config",
   "displayName": "rightflow config",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Set up and change your firm's own agent team in rightflow: load it, change it, review every change, submit it, and see what changed when.",
   "author": {
     "name": "rightflow"

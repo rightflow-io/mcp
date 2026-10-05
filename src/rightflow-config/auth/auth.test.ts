@@ -5,9 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Environment } from "../env.ts";
 import { UserFacingError } from "../errors.ts";
-import { awaitCallback, escapeHtml } from "./loopback.ts";
-import { authorizationUrl, organizationIdsFromIdToken, organizationToken, type Fetch } from "./oidc.ts";
-import { createPkcePair } from "./pkce.ts";
+import { organizationIdsFromIdToken, organizationToken, pollDeviceToken, startDeviceAuthorization, type Fetch } from "./oidc.ts";
 import { Session } from "./session.ts";
 import { SessionStore, type StoredSession } from "./store.ts";
 
@@ -36,25 +34,82 @@ function tokenEndpoint(responses: Array<{ status?: number; body: object }>, seen
   }) as Fetch;
 }
 
-test("the PKCE challenge is the S256 of the verifier", () => {
-  const { verifier, challenge } = createPkcePair();
-  assert.match(verifier, /^[A-Za-z0-9_-]{43}$/);
-  assert.notEqual(challenge, verifier);
+/** A sign-in service that answers by path: discovery, device authorization, token. */
+function signInService(token: Array<{ status?: number; body: object }>, seen: Array<{ path: string; body: URLSearchParams }> = []): Fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    seen.push({ path, body: new URLSearchParams(String(init?.body ?? "")) });
+    if (path === "/oidc/.well-known/openid-configuration") {
+      return Response.json({ device_authorization_endpoint: `${ENV.authUrl}/oidc/device/auth` });
+    }
+    if (path === "/oidc/device/auth") {
+      return Response.json({
+        device_code: "device-1",
+        user_code: "ABCD-EFGH",
+        verification_uri: `${ENV.authUrl}/device`,
+        verification_uri_complete: `${ENV.authUrl}/device?user_code=ABCD-EFGH`,
+        expires_in: 600,
+        interval: 5,
+      });
+    }
+    const next = token.shift();
+    if (!next) throw new Error("unexpected request");
+    return Response.json(next.body, { status: next.status ?? 200 });
+  }) as Fetch;
+}
+
+test("a device sign-in asks only for what the plugin reads", async () => {
+  const seen: Array<{ path: string; body: URLSearchParams }> = [];
+  const device = await startDeviceAuthorization(ENV, signInService([], seen));
+  assert.equal(device.userCode, "ABCD-EFGH");
+  assert.equal(device.verificationUriComplete, `${ENV.authUrl}/device?user_code=ABCD-EFGH`);
+  const request = seen.find((s) => s.path === "/oidc/device/auth")?.body;
+  assert.equal(request?.get("client_id"), "public-client");
+  assert.equal(request?.get("scope"), "openid offline_access urn:logto:scope:organizations");
+  assert.equal(request?.get("resource"), "urn:logto:resource:organizations");
 });
 
-test("the authorization URL asks for organizations and PKCE", () => {
-  const url = new URL(authorizationUrl(ENV, { redirectUri: "http://127.0.0.1:1/callback", challenge: "c", state: "s" }));
-  assert.equal(url.origin + url.pathname, "https://auth.test.invalid/oidc/auth");
-  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
-  assert.match(url.searchParams.get("scope") ?? "", /offline_access/);
-  assert.match(url.searchParams.get("scope") ?? "", /urn:logto:scope:organizations/);
+test("no client id means a plain refusal, not a broken request", async () => {
+  await assert.rejects(startDeviceAuthorization({ ...ENV, clientId: null }, signInService([])), UserFacingError);
 });
 
-test("no client id means a plain refusal, not a broken request", () => {
-  assert.throws(
-    () => authorizationUrl({ ...ENV, clientId: null }, { redirectUri: "x", challenge: "c", state: "s" }),
-    UserFacingError,
-  );
+test("a refusal carries the service's own reason", async () => {
+  const f = signInService([{ status: 400, body: { error: "invalid_scope", error_description: "requested scope is not allowed" } }]);
+  await assert.rejects(pollDeviceToken(ENV, "device-1", f), (err: unknown) => {
+    assert.ok(err instanceof UserFacingError);
+    assert.match(err.message, /invalid_scope: requested scope is not allowed/);
+    return true;
+  });
+});
+
+test("waiting, slowing down, expiry and a declined code read as such", async () => {
+  const f = signInService([
+    { status: 400, body: { error: "authorization_pending" } },
+    { status: 400, body: { error: "slow_down" } },
+    { status: 400, body: { error: "expired_token" } },
+    { status: 400, body: { error: "access_denied" } },
+  ]);
+  assert.equal((await pollDeviceToken(ENV, "d", f)).status, "pending");
+  assert.equal((await pollDeviceToken(ENV, "d", f)).status, "slow_down");
+  await assert.rejects(pollDeviceToken(ENV, "d", f), /expired/);
+  await assert.rejects(pollDeviceToken(ENV, "d", f), /declined/);
+});
+
+test("a confirmed code becomes a saved login with the firms from the ID token", async () => {
+  const store = new SessionStore(await tempDir(), "development");
+  const opened: string[] = [];
+  const f = signInService([
+    { status: 400, body: { error: "authorization_pending" } },
+    { body: { access_token: "a", refresh_token: "r1", expires_in: 3600, id_token: idToken({ organizations: ["org-a"] }) } },
+  ]);
+  const session = new Session(ENV, store, { fetch: f, openBrowser: (u) => opened.push(u), pollIntervalMs: 1 });
+  const pending = await session.startSignIn();
+  assert.equal(pending.userCode, "ABCD-EFGH");
+  assert.deepEqual(opened, [pending.url]);
+  const outcome = await pending.done;
+  assert.ok(outcome.ok);
+  assert.deepEqual((await store.read())?.organizationIds, ["org-a"]);
+  assert.equal((await store.read())?.refreshToken, "r1");
 });
 
 test("the firms of a login come from the ID token", () => {
@@ -111,27 +166,4 @@ test("concurrent refreshes spend the refresh token once", async () => {
   assert.equal(seen.length, 1);
   assert.equal(seen[0]?.get("organization_id"), "o");
   assert.equal((await store.read())?.refreshToken, "r2");
-});
-
-test("the loopback callback accepts its own state and nothing else", async () => {
-  const ok = await awaitCallback("expected", { ports: [53790, 53791], timeoutMs: 5000 });
-  const res = await fetch(`${ok.redirectUri}?code=abc&state=expected`);
-  assert.equal(res.status, 200);
-  assert.equal(await ok.code, "abc");
-
-  // A forged answer or a stray error is turned away without ending the wait.
-  const second = await awaitCallback("expected", { ports: [53792, 53793], timeoutMs: 5000 });
-  assert.equal((await fetch(`${second.redirectUri}?code=forged&state=forged`)).status, 400);
-  assert.equal((await fetch(`${second.redirectUri}?error=access_denied`)).status, 400);
-  assert.equal((await fetch(`${second.redirectUri}?code=real&state=expected`)).status, 200);
-  assert.equal(await second.code, "real");
-
-  const refused = await awaitCallback("expected", { ports: [53794, 53795], timeoutMs: 5000 });
-  const rejected = assert.rejects(refused.code, UserFacingError);
-  assert.equal((await fetch(`${refused.redirectUri}?error=access_denied&state=expected`)).status, 400);
-  await rejected;
-});
-
-test("text placed in the callback page is escaped", () => {
-  assert.equal(escapeHtml(`<script>"x"&'y'</script>`), "&#60;script&#62;&#34;x&#34;&#38;&#39;y&#39;&#60;/script&#62;");
 });

@@ -11,9 +11,10 @@ export interface Environment {
   /** Base URL of the sign-in service (OpenID Connect issuer without `/oidc`). */
   authUrl: string;
   /**
-   * Public client id of the native sign-in app registered for this plugin. Public
-   * by design: a program on a person's laptop cannot keep a secret, which is why
-   * the sign-in uses PKCE. `null` until the app is registered for this environment.
+   * Public client id of the sign-in app registered for this plugin, one that
+   * signs in with a code (device flow). Public by design: a program on a
+   * person's machine cannot keep a secret. `null` until the app is registered
+   * for this environment.
    */
   clientId: string | null;
   /** True when a development override replaced one of the values above. */
@@ -26,8 +27,7 @@ const ENVIRONMENTS: Record<EnvironmentName, Omit<Environment, "overridden">> = {
     label: "Production",
     apiUrl: "https://api.rightflow.one/api",
     authUrl: "https://auth.rightflow.one",
-    // Public by design (see `clientId` above): a native app's id, not a secret.
-    clientId: "212ae8jsht9sfm3qzhp8n",
+    clientId: null,
   },
   development: {
     name: "development",
@@ -35,7 +35,7 @@ const ENVIRONMENTS: Record<EnvironmentName, Omit<Environment, "overridden">> = {
     apiUrl: "https://api.dev.rightflow.one/api",
     authUrl: "https://auth.dev.rightflow.one",
     // Public by design (see `clientId` above): a native app's id, not a secret.
-    clientId: "f7j5f9m7ziewtzmr6xshe",
+    clientId: "620e8xm971hkxcvx8hrlk",
   },
 };
 

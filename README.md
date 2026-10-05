@@ -28,8 +28,9 @@ In Claude Code:
 
 ### What it does on your machine
 
-- It signs you in through your browser with your normal rightflow login, and
-  keeps that sign-in in the plugin's own data folder, readable only by you.
+- It signs you in with your normal rightflow login: it shows a link and a short
+  code, and you confirm the code in any browser. It keeps that sign-in in the
+  plugin's own data folder, readable only by you.
 - It writes a team to a folder you choose when you ask it to load one.
 - It talks only to rightflow's sign-in service and API. It sends no telemetry.
 
@@ -61,6 +62,15 @@ Each environment has its own sign-in and its own default folders
 environment, or for one firm, is never sent to another. The first line of every
 answer names the environment and the firm, so you can always see where you are
 working.
+
+### In a cloud session
+
+The plugin also works in a Claude Code session that runs in the cloud, since
+signing in needs nothing to come back to your computer. The session's network
+access has to allow rightflow's sign-in service and API:
+`auth.rightflow.one` and `api.rightflow.one`, or `auth.dev.rightflow.one` and
+`api.dev.rightflow.one` for development. The cloud machine is discarded after a
+while, and its sign-in with it, so you sign in again in a new session.
 
 ## License
 

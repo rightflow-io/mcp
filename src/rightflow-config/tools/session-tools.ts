@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Api } from "../api.ts";
-import type { Session } from "../auth/session.ts";
+import type { PendingSignIn, Session } from "../auth/session.ts";
 import type { StoredSession } from "../auth/store.ts";
 import { UserFacingError } from "../errors.ts";
 import { fetchMe, matchFirms, selectableFirms, SETUP_MODULE, SETUP_PERMISSION, type Me, type Membership } from "../me.ts";
@@ -11,7 +11,7 @@ export interface SessionToolsContext {
   session: Session;
   api: Api;
   version: string;
-  /** How long one sign_in call waits for the browser before handing back the link. */
+  /** How long a sign_in call waits for a code shown earlier to be confirmed. */
   signInWaitMs?: number;
 }
 
@@ -20,9 +20,9 @@ const MIN_NODE = [22, 18] as const;
 export function registerSessionTools(server: McpServer, ctx: SessionToolsContext): void {
   const { session, api } = ctx;
   const env = session.env;
-  // One browser sign-in at a time. It stays here until a sign_in call has seen how
-  // it ended: a login finished after the call that started it returned the link
-  // is picked up by the next call, not answered with a second browser sign-in.
+  // One sign-in at a time. It stays here until a sign_in call has seen how it
+  // ended, so the call after the one that showed the code picks up the login
+  // instead of starting over with a new code.
   let pending: PendingSignIn | null = null;
 
   server.registerTool(
@@ -59,9 +59,10 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
     {
       title: "Sign in to rightflow",
       description:
-        "Signs in to rightflow in the browser with your normal rightflow login, then selects your firm. If the login " +
-        "belongs to several firms, pass `firm` (its name or id) or call use_firm afterwards. If the browser sign-in is " +
-        "not finished within a minute and a half, this returns the link; call sign_in again once you are done.",
+        "Signs in to rightflow with your normal rightflow login, then selects your firm. The first call returns a link " +
+        "and a code at once: show both to the person, word for word. They open the link in any browser, check that " +
+        "the code matches, and sign in. Then call sign_in again; it waits for the confirmation. If the login belongs " +
+        "to several firms, pass `firm` (its name or id) or call use_firm afterwards.",
       inputSchema: {
         firm: z.string().min(1).max(200).optional().describe("Name or id of the firm to work on."),
       },
@@ -69,18 +70,17 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
     },
     ({ firm }) =>
       run(env, async () => {
-        const current = pending ?? (pending = await startSignIn(session));
+        if (!pending) {
+          pending = await session.startSignIn();
+          return { firm: null, text: showCode(env.label, pending) };
+        }
+        const current = pending;
         const outcome = await Promise.race([
           current.done,
           delay(ctx.signInWaitMs ?? 90_000).then(() => ({ ok: "waiting" as const })),
         ]);
         if (outcome.ok === "waiting") {
-          return {
-            firm: null,
-            text:
-              `A ${env.label} sign-in page should have opened in your browser. If it did not, open this link:\n` +
-              `${current.url}\n\nOnce you have signed in, call sign_in again.`,
-          };
+          return { firm: null, text: `Not confirmed yet.\n\n${showCode(env.label, current)}` };
         }
         if (pending === current) pending = null;
         if (!outcome.ok) throw outcome.error;
@@ -125,31 +125,13 @@ export function registerSessionTools(server: McpServer, ctx: SessionToolsContext
   );
 }
 
-type SignInOutcome = { ok: true; session: StoredSession } | { ok: false; error: unknown };
-
-interface PendingSignIn {
-  /** Never rejects, so an outcome nobody is waiting for is kept rather than reported as unhandled. */
-  done: Promise<SignInOutcome>;
-  url: string;
-}
-
-async function startSignIn(session: Session): Promise<PendingSignIn> {
-  let url = "";
-  let urlReady!: () => void;
-  const ready = new Promise<void>((r) => {
-    urlReady = r;
-  });
-  const done = session.signIn((u) => {
-    url = u;
-    urlReady();
-  }).then(
-    (s): SignInOutcome => ({ ok: true, session: s }),
-    (error: unknown): SignInOutcome => ({ ok: false, error }),
+function showCode(label: string, p: PendingSignIn): string {
+  const manual = p.url === p.verificationUri ? "" : ` (or open ${p.verificationUri} and type the code)`;
+  return (
+    `To sign in to ${label}, open this link in any browser${manual}:\n${p.url}\n\n` +
+    `Code: ${p.userCode}\n\n` +
+    "Check that the page shows this code, then sign in with your rightflow login. Afterwards, call sign_in again."
   );
-  // signIn hands over the URL before it starts waiting for the browser; a
-  // failure before that point is reported through `done`.
-  await Promise.race([ready, done]);
-  return { done, url };
 }
 
 async function chooseFirm(
