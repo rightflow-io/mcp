@@ -13,6 +13,18 @@ test("production is the default and an unknown environment is refused", () => {
   assert.throws(() => resolveEnvironment({ RF_CONFIG_ENV: "staging" }));
 });
 
+test("both environments can sign in without an override", () => {
+  for (const name of ["production", "development"]) {
+    const env = resolveEnvironment({ RF_CONFIG_ENV: name });
+    assert.ok(env.clientId);
+    assert.equal(env.overridden, false);
+  }
+  assert.notEqual(
+    resolveEnvironment({ RF_CONFIG_ENV: "production" }).clientId,
+    resolveEnvironment({ RF_CONFIG_ENV: "development" }).clientId,
+  );
+});
+
 test("development overrides are visible in the header", () => {
   const env = resolveEnvironment({ RF_CONFIG_ENV: "development", RF_CONFIG_API_URL: "http://127.0.0.1:3003/api" });
   assert.equal(env.overridden, true);
