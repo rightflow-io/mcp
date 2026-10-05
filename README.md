@@ -35,6 +35,33 @@ In Claude Code:
 
 What you may change is decided by rightflow's servers, not by the plugin.
 
+### How a change goes
+
+1. Load the team into a folder.
+2. Ask Claude to change it.
+3. Claude checks the change with rightflow and shows you every file it touches,
+   with what rightflow would refuse.
+4. Nothing goes live until you agree and give a short summary of the change.
+   The summary is kept in the team's change log, next to who made the change
+   and when.
+
+You can look back at that log, and bring an earlier version back as a new entry.
+
+### Production and development
+
+The plugin works against rightflow **production** by default. If rightflow asks
+you to try something on its development environment:
+
+1. Open `/plugin`, choose rightflow-config, and set its environment option to
+   `development`.
+2. Call `sign_in` again.
+
+Each environment has its own sign-in and its own default folders
+(`rightflow/production/…`, `rightflow/development/…`). A team loaded from one
+environment, or for one firm, is never sent to another. The first line of every
+answer names the environment and the firm, so you can always see where you are
+working.
+
 ## License
 
 [Apache-2.0](LICENSE).

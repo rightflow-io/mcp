@@ -2985,7 +2985,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3012,7 +3012,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3842,7 +3842,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3875,49 +3875,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative = parse3(serialize(relative, options), options);
+        relative2 = parse3(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3925,7 +3925,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -4211,7 +4211,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -15862,7 +15862,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve) {
+function isRecursive(inst, stack, resolve2) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -15872,7 +15872,7 @@ function isRecursive(inst, stack, resolve) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve);
+      const answer = isRecursive(child, stack, resolve2);
       if (answer > result)
         result = answer;
     }
@@ -15883,7 +15883,7 @@ function isRecursive(inst, stack, resolve) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve2) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -15947,7 +15947,7 @@ function isRecursive(inst, stack, resolve) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve2 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -34377,7 +34377,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error62) {
@@ -34394,7 +34394,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error62) => {
         reject(error62);
       };
@@ -34472,7 +34472,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error62) {
           reject(error62);
@@ -34734,12 +34734,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -35870,7 +35870,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -36534,12 +36534,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -36594,6 +36594,11 @@ var Api = class {
     if (res.status === 403) {
       throw new UserFacingError(serverMessage(parsed) ?? "rightflow refused this for your account.");
     }
+    if (res.status === 413) {
+      throw new UserFacingError(
+        "rightflow refused the request as too large. team_reference lists the limits for files and request size."
+      );
+    }
     if (res.status >= 500) {
       throw new UserFacingError(`rightflow ${env2.label} had a problem answering (${res.status}). Try again shortly.`);
     }
@@ -36608,12 +36613,24 @@ function parseJson(text) {
     return text;
   }
 }
-function serverMessage(body) {
-  if (typeof body !== "object" || body === null || !("message" in body)) return null;
-  const m = body.message;
-  if (typeof m === "string") return m;
-  if (Array.isArray(m) && m.every((x) => typeof x === "string")) return m.join(" ");
+function errorDetail(body) {
+  const detail = isRecord(body) && "error" in body ? body.error : body;
+  if (typeof detail === "string" || isRecord(detail)) return detail;
   return null;
+}
+function serverMessage(body) {
+  const detail = errorDetail(body);
+  if (typeof detail === "string") return detail;
+  if (!detail) return null;
+  const m = detail.message;
+  const message = typeof m === "string" ? m : Array.isArray(m) && m.every((x) => typeof x === "string") ? m.join(" ") : null;
+  const issues = Array.isArray(detail.issues) ? detail.issues.filter(isRecord).map((i) => `- ${typeof i.path === "string" && i.path ? `${i.path}: ` : ""}${String(i.message ?? "")}`) : [];
+  if (message === null) return issues.length > 0 ? issues.join("\n") : null;
+  return issues.length > 0 ? `${message}
+${issues.join("\n")}` : message;
+}
+function isRecord(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 // src/rightflow-config/auth/loopback.ts
@@ -36636,8 +36653,8 @@ async function awaitCallback(expectedState, opts = {}) {
 function listen(port, expectedState, timeoutMs) {
   return new Promise((resolveReady, rejectReady) => {
     let settle2;
-    const code = new Promise((resolve, reject) => {
-      settle2 = { resolve, reject };
+    const code = new Promise((resolve2, reject) => {
+      settle2 = { resolve: resolve2, reject };
     });
     code.catch(() => void 0);
     let timer;
@@ -37322,11 +37339,815 @@ function describeAccess(me) {
 }
 function nodeCheck() {
   const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
-  const ok = major > MIN_NODE[0] || major === MIN_NODE[0] && minor >= MIN_NODE[1];
-  return ok ? `Node.js ${process.versions.node}.` : `Node.js ${process.versions.node} is older than ${MIN_NODE.join(".")}; update Node.js before relying on this plugin.`;
+  const ok2 = major > MIN_NODE[0] || major === MIN_NODE[0] && minor >= MIN_NODE[1];
+  return ok2 ? `Node.js ${process.versions.node}.` : `Node.js ${process.versions.node} is older than ${MIN_NODE.join(".")}; update Node.js before relying on this plugin.`;
 }
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms).unref());
+}
+
+// src/rightflow-config/tools/team-tools.ts
+import { createHash as createHash3 } from "node:crypto";
+
+// src/rightflow-config/folder.ts
+import { createHash as createHash2 } from "node:crypto";
+import { lstat, mkdir as mkdir2, readdir, readFile as readFile2, rm as rm2, rmdir, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname, isAbsolute, join as join3, posix, relative, resolve, sep } from "node:path";
+var MARKER_DIR = ".rightflow";
+var MARKER_FILE = "team.json";
+var MAX_WALK_ENTRIES = 1e4;
+function defaultFolder(env2, name) {
+  const slug = name.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return join3("rightflow", env2.name, slug || "team");
+}
+function resolveFolder(folder, cwd = process.cwd()) {
+  return resolve(cwd, folder);
+}
+function sha256(text) {
+  return createHash2("sha256").update(text, "utf8").digest("hex");
+}
+function hashFiles(files) {
+  return Object.fromEntries(Object.entries(files).map(([path, content]) => [path, sha256(content)]));
+}
+async function readMarker(folder) {
+  let text;
+  try {
+    text = await readFile2(join3(folder, MARKER_DIR, MARKER_FILE), "utf8");
+  } catch (err) {
+    if (isMissing(err)) return null;
+    throw err;
+  }
+  const parsed = parseMarker(text);
+  if (!parsed) {
+    throw new UserFacingError(
+      `${join3(folder, MARKER_DIR, MARKER_FILE)} is not a rightflow team marker this plugin can read. Pull the team into a new folder.`
+    );
+  }
+  return parsed;
+}
+async function writeMarker(folder, marker) {
+  await mkdir2(join3(folder, MARKER_DIR), { recursive: true });
+  await writeFile2(join3(folder, MARKER_DIR, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
+`);
+}
+async function readTeamFiles(folder) {
+  const files = {};
+  let seen = 0;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const walk = async (dir) => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if (isMissing(err) && dir === folder) throw new UserFacingError(`There is no folder ${folder}.`);
+      throw err;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith(".")) continue;
+      if (++seen > MAX_WALK_ENTRIES) {
+        throw new UserFacingError(`${folder} holds far more files than a team does. Choose the team's own folder.`);
+      }
+      const full = join3(dir, entry.name);
+      const rel = relative(folder, full).split(sep).join("/");
+      if (entry.isSymbolicLink()) {
+        throw new UserFacingError(`${rel} is a link. A team folder holds plain files only; replace it with the file itself.`);
+      }
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile()) {
+        try {
+          files[rel] = decoder.decode(await readFile2(full));
+        } catch (err) {
+          if (err instanceof TypeError) {
+            throw new UserFacingError(`${rel} is not a text file in UTF-8. A team folder holds text files only.`);
+          }
+          throw err;
+        }
+      }
+    }
+  };
+  await walk(folder);
+  return files;
+}
+function localChanges(base, current) {
+  const now = hashFiles(current);
+  const added = Object.keys(now).filter((p) => !(p in base));
+  const modified = Object.keys(now).filter((p) => p in base && base[p] !== now[p]);
+  const deleted = Object.keys(base).filter((p) => !(p in now));
+  return { added: added.sort(), modified: modified.sort(), deleted: deleted.sort() };
+}
+function hasChanges(c) {
+  return c.added.length + c.modified.length + c.deleted.length > 0;
+}
+function targetInside(folder, path) {
+  const segments = path.split("/");
+  const bad = path.length === 0 || path.includes("\0") || path.includes("\\") || isAbsolute(path) || posix.isAbsolute(path) || /^[a-zA-Z]:/.test(path) || segments.some((s) => s === "" || s === "." || s === ".." || s.startsWith("."));
+  const target = resolve(folder, ...segments);
+  if (bad || !target.startsWith(resolve(folder) + sep)) {
+    throw new UserFacingError(`rightflow sent a file path this plugin will not write: ${JSON.stringify(path)}. Nothing was written.`);
+  }
+  return target;
+}
+async function writeTeamFolder(folder, files, marker, opts) {
+  const targets = Object.keys(files).map((path) => [path, targetInside(folder, path)]);
+  const existing = await readExisting(folder);
+  if (existing && !opts.replace) {
+    const reason = await occupied(folder, existing, marker);
+    if (reason) throw new UserFacingError(`${reason} Choose another folder, or pass replace: true to overwrite it.`);
+  }
+  for (const path of Object.keys(existing ?? {})) {
+    if (!(path in files)) await rm2(targetInside(folder, path), { force: true });
+  }
+  if (existing) await pruneEmptyDirectories(folder);
+  for (const [path, target] of targets) {
+    await mkdir2(dirname(target), { recursive: true });
+    await writeFile2(target, files[path] ?? "");
+  }
+  await writeMarker(folder, { version: 1, ...marker, files: hashFiles(files) });
+}
+async function readExisting(folder) {
+  try {
+    const st = await lstat(folder);
+    if (!st.isDirectory()) throw new UserFacingError(`${folder} is a file, not a folder.`);
+  } catch (err) {
+    if (isMissing(err)) return null;
+    throw err;
+  }
+  return readTeamFiles(folder);
+}
+async function occupied(folder, existing, incoming) {
+  const marker = await readMarker(folder);
+  if (!marker) {
+    return Object.keys(existing).length === 0 ? null : `${folder} already holds files that are not a pulled team.`;
+  }
+  if (marker.environment !== incoming.environment || marker.firmId !== incoming.firmId || marker.teamId !== incoming.teamId) {
+    return `${folder} holds the team "${marker.teamName}" of ${marker.firmName} (${marker.environment}).`;
+  }
+  const changes = localChanges(marker.files, existing);
+  return hasChanges(changes) ? `${folder} holds changes that were not submitted:
+${describeChanges(changes)}
+` : null;
+}
+function describeChanges(c, max = 30) {
+  const lines = [
+    ...c.added.map((p) => `+ ${p}`),
+    ...c.modified.map((p) => `~ ${p}`),
+    ...c.deleted.map((p) => `- ${p}`)
+  ];
+  const shown = lines.slice(0, max);
+  if (lines.length > max) shown.push(`\u2026 and ${lines.length - max} more`);
+  return shown.join("\n");
+}
+async function pruneEmptyDirectories(folder) {
+  const prune = async (dir) => {
+    const entries = await readdir(dir, { withFileTypes: true });
+    let empty = true;
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        if (!await prune(join3(dir, entry.name))) empty = false;
+      } else {
+        empty = false;
+      }
+    }
+    if (empty && dir !== folder) await rmdir(dir);
+    return empty;
+  };
+  await prune(folder);
+}
+function parseMarker(text) {
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== "object" || raw === null) return null;
+  const m = raw;
+  const str = (v) => typeof v === "string";
+  const files = m.files;
+  if (m.version !== 1 || m.environment !== "production" && m.environment !== "development" || !str(m.firmId) || !str(m.firmName) || !(m.teamId === null || str(m.teamId)) || !str(m.teamName) || !(m.baseHash === null || str(m.baseHash)) || typeof files !== "object" || files === null || !Object.values(files).every(str)) {
+    return null;
+  }
+  return raw;
+}
+function isMissing(err) {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
+}
+
+// src/rightflow-config/tools/render.ts
+var DIFF_BUDGET_CHARS = 4e4;
+var STATUS_MARK = { added: "+", modified: "~", deleted: "-" };
+function renderChanges(changes, only, budget = DIFF_BUDGET_CHARS) {
+  if (changes.length === 0) return "Files: nothing changes.";
+  const lines = [`Files (${changes.length}):`, ...changes.map((c) => `${STATUS_MARK[c.status]} ${c.path}`)];
+  const wanted = only && only.length > 0 ? changes.filter((c) => only.includes(c.path)) : changes;
+  const unknown2 = (only ?? []).filter((p) => !changes.some((c) => c.path === p));
+  if (unknown2.length > 0) lines.push("", `Not among the changed files: ${unknown2.join(", ")}`);
+  let used = 0;
+  const left = [];
+  for (const c of wanted) {
+    if (c.unified === "" || used + c.unified.length > budget) {
+      if (c.unified !== "") left.push(c.path);
+      continue;
+    }
+    used += c.unified.length;
+    lines.push("", "```diff", c.unified.trimEnd(), "```");
+    if (c.truncated) lines.push(`(rightflow cut the diff of ${c.path} short; the file itself is complete.)`);
+  }
+  if (left.length > 0) {
+    lines.push("", `Diffs not shown here, to keep this answer readable: ${left.join(", ")}. Ask for them with \`paths\`.`);
+  }
+  return lines.join("\n");
+}
+function renderFindings(title, findings) {
+  if (findings.length === 0) return [];
+  return [title, ...findings.map((f) => `- ${f.path ? `${f.path}: ` : ""}${f.message}`)];
+}
+function renderAgents(a) {
+  const parts = [
+    a.created.length ? `new: ${a.created.join(", ")}` : null,
+    a.updated.length ? `changed: ${a.updated.join(", ")}` : null,
+    a.deleted.length ? `removed: ${a.deleted.join(", ")}` : null
+  ].filter((x) => x !== null);
+  return parts.length > 0 ? `Agents \u2014 ${parts.join("; ")}.` : null;
+}
+function renderCheck(check2, only) {
+  const out = [];
+  if (check2.stale) {
+    out.push(
+      "The team changed in rightflow since this folder was pulled, so this change would be refused. Pull the team into a new folder, carry the change across, and check again."
+    );
+  }
+  out.push(check2.ok ? "rightflow would accept this change." : "rightflow would not accept this change as it is:");
+  out.push(...renderFindings("Not allowed:", check2.refusals));
+  out.push(...renderFindings("Case fields with errors:", check2.lint.errors));
+  if (check2.lint.advisories.length > 0) {
+    out.push("Worth a look (not blocking):", ...check2.lint.advisories.map((a) => `- ${a.path}: ${a.values.join(", ")}`));
+  }
+  if (check2.missingLetterheads.length > 0) {
+    out.push(
+      "Letter templates name a letterhead the firm does not have yet:",
+      ...check2.missingLetterheads.map((m) => `- ${m.letterhead}: ${m.templates.join(", ")}`)
+    );
+  }
+  if (check2.absorbRules.length > 0) {
+    out.push(
+      "Confirmed rules this change takes into the team's text (they stop applying separately once it is submitted):",
+      ...check2.absorbRules.map((r) => `- ${r.ruleId}: ${r.heading}`)
+    );
+  }
+  if (check2.warnings.orphanedRules.length > 0) {
+    out.push(
+      "Confirmed rules that would have nothing left to apply to:",
+      ...check2.warnings.orphanedRules.map((r) => `- ${r.id}: ${r.heading} (${r.target})`),
+      "Take them into the text with `absorbRules`, or keep what they apply to."
+    );
+  }
+  const agents = renderAgents(check2.agents);
+  if (agents) out.push(agents);
+  out.push("", renderChanges(check2.changes, only));
+  return out.join("\n");
+}
+function renderRefusedApply(detail) {
+  const findings = (key) => Array.isArray(detail[key]) ? detail[key] : [];
+  const lines = [typeof detail.message === "string" ? detail.message : "rightflow did not apply the change."];
+  lines.push(...renderFindings("Not allowed:", findings("refusals")));
+  lines.push(...renderFindings("Case fields with errors:", findings("lint")));
+  return lines.join("\n");
+}
+function renderApplied(result) {
+  const lines = [
+    result.revision === null ? "Submitted. Nothing differed from the team as it stood, so no new entry was added to its change log." : `Submitted as change #${result.revision} in the team's change log. Files changed: ${result.changedFiles}.`
+  ];
+  const agents = renderAgents(result.agents);
+  if (agents) lines.push(agents);
+  for (const r of result.absorbedRules) {
+    lines.push(
+      r.retired ? `Rule ${r.ruleId} is now part of the team's text and no longer applies separately.` : `Rule ${r.ruleId} still applies separately: ${r.error ?? "rightflow could not retire it"}.`
+    );
+  }
+  return lines.join("\n");
+}
+var SOURCE_TEXT = {
+  firm: "submitted by the firm",
+  admin: "changed by rightflow support",
+  platform_api: "imported as a folder in the rightflow app",
+  library: "installed or updated from rightflow's library",
+  restore: "restored",
+  outside_import: "changed in the rightflow app (settings, editors or confirmed learnings)",
+  baseline: "the team as it stood when its change log started"
+};
+function describeSource(r) {
+  if (r.source === "restore" && r.restoredFrom !== null) return `restored from #${r.restoredFrom}`;
+  return SOURCE_TEXT[r.source];
+}
+function renderRevisionLine(r) {
+  const counts = [
+    r.counts.added ? `${r.counts.added} added` : null,
+    r.counts.modified ? `${r.counts.modified} changed` : null,
+    r.counts.deleted ? `${r.counts.deleted} removed` : null
+  ].filter(Boolean);
+  const head = `#${r.number} \xB7 ${r.createdAt.slice(0, 16).replace("T", " ")} UTC \xB7 ${describeSource(r)}${r.author ? ` \xB7 ${r.author}` : ""}`;
+  const lines = [head];
+  if (r.message) lines.push(`  "${r.message}"`);
+  if (counts.length > 0) lines.push(`  files: ${counts.join(", ")}`);
+  if (r.absorbedRules.length > 0) lines.push(`  took in rules: ${r.absorbedRules.map((a) => a.ruleId).join(", ")}`);
+  return lines.join("\n");
+}
+function renderRevision(r, only) {
+  return [renderRevisionLine(r), "", "What it changed compared with the change before it:", renderChanges(r.changes, only)].join("\n");
+}
+function renderLearnings(l) {
+  const out = [];
+  if (l.rules.length === 0) {
+    out.push("Confirmed rules: none.");
+  } else {
+    out.push(`Confirmed rules (${l.rules.length}) \u2014 the team follows these on top of its text:`);
+    for (const r of l.rules) {
+      const where = r.target.scope === "general" ? "whole team" : `${r.target.scope} ${r.target.name ?? ""}`.trim();
+      out.push(`- ${r.id} \xB7 ${where} \xB7 ${r.heading}`);
+      if (r.when) out.push(`  when: ${r.when}`);
+      out.push(`  then: ${r.then}`);
+    }
+  }
+  out.push("");
+  if (l.pending.total === 0) {
+    out.push("Proposals waiting for review: none.");
+  } else {
+    out.push(`Proposals waiting for review in the app (${l.pending.total}${l.pending.items.length < l.pending.total ? `, newest ${l.pending.items.length} shown` : ""}):`);
+    for (const p of l.pending.items) {
+      out.push(`- ${p.kind === "rule" ? "rule" : "text block"}${p.target ? ` for ${p.target}` : ""}${p.proposalCount > 1 ? ` (proposed ${p.proposalCount} times)` : ""}`);
+      if (p.proposedText) out.push(`  ${p.proposedText}`);
+      if (p.reason) out.push(`  why: ${p.reason}`);
+    }
+  }
+  if (l.fileChanges.length > 0) {
+    out.push("", "Files a confirmed learning changed directly:");
+    out.push(...l.fileChanges.map((f) => `- ${f.path}${f.changedAt ? ` (${f.changedAt.slice(0, 10)})` : ""}`));
+  }
+  if (l.orphans.length > 0) {
+    out.push("", "Confirmed rules whose skill or helper the team no longer has:");
+    out.push(...l.orphans.map((o) => `- ${o.id}: ${o.heading} (${o.target})`));
+  }
+  return out.join("\n");
+}
+function renderReference(r) {
+  const list = (xs) => xs.length > 0 ? xs.join(", ") : "none";
+  return [
+    `Policy version ${r.policyVersion}.`,
+    "",
+    "Tool groups an agent may be given:",
+    ...r.toolGroups.map((g) => `- ${g.id} \u2014 ${g.label}: ${g.description}`),
+    "",
+    `Artifact types: ${list(r.artifactTypes)}`,
+    "Agents a team may include from rightflow's templates:",
+    ...r.includableTemplates.length > 0 ? r.includableTemplates.map((t) => `- ${t.key} \u2014 ${t.name}: ${t.description}`) : ["- none"],
+    `Icons: ${list(r.icons)}`,
+    `Rule blocks: ${list(r.ruleBlocks)}`,
+    "",
+    "Case fields (CASE_SCHEMA.json):",
+    `- extra keywords: ${list(r.caseSchema.keywords)}`,
+    `- widgets: ${list(r.caseSchema.widgets)}`,
+    `- tones for choice labels: ${list(r.caseSchema.enumTones)}`,
+    `- fields rightflow fills itself (do not redefine): ${list(r.caseSchema.platformKeys)}`,
+    "",
+    "Settings:",
+    `- team, may change: ${list(r.settings.teamConfig.open)}`,
+    `- team, set by rightflow: ${list(r.settings.teamConfig.locked)}`,
+    `- agent, may change: ${list(r.settings.agentConfig.open)}`,
+    `- agent, set by rightflow: ${list(r.settings.agentConfig.locked)}`,
+    `- case group, may change: ${list(r.settings.caseGroupConfig.open)}`,
+    "",
+    `Limits: ${r.limits.files} files, ${r.limits.fileCharacters} characters per file, ${r.limits.requestBytes} bytes per request.`,
+    `Starter teams: ${list(r.starterLocales)}`
+  ].join("\n");
+}
+
+// src/rightflow-config/tools/team-tools.ts
+var TEAM_LIST_LIMIT = 100;
+var teamArg = external_exports.string().min(1).max(200).describe("The team's name or id, as list_teams shows it.");
+var folderArg = external_exports.string().min(1).max(1e3).describe("The team's folder, absolute or relative to where Claude Code runs.");
+var pathsArg = external_exports.array(external_exports.string().min(1).max(500)).max(200).optional().describe("Show the diffs of these files only. Every changed file is listed either way.");
+var absorbArg = external_exports.array(
+  external_exports.object({
+    ruleId: external_exports.string().min(1).max(64).describe("The rule's id as team_learnings shows it (r-\u2026)."),
+    reason: external_exports.string().min(1).max(2e3).describe("Where in the team's text the rule now lives.")
+  })
+).max(100).optional().describe("Confirmed rules this change writes into the team's text, so they stop applying separately.");
+var messageArg = external_exports.string().trim().min(1).max(2e3).describe("The person's own summary of the change and why. It is kept in the team's change log.");
+var previewArg = external_exports.string().min(1).max(100).describe("The preview id the check returned.");
+function registerTeamTools(server2, ctx) {
+  const { session, api } = ctx;
+  const env2 = session.env;
+  const cwd = ctx.cwd ?? process.cwd();
+  const previews = /* @__PURE__ */ new Map();
+  async function firm() {
+    const saved = await session.current();
+    if (!saved) throw new UserFacingError(`Not signed in to ${env2.label}. Call sign_in.`);
+    if (!saved.organizationId) throw new UserFacingError(`Signed in to ${env2.label}, but no firm is selected. Call use_firm.`);
+    return { id: saved.organizationId, name: saved.organizationName ?? saved.organizationId };
+  }
+  async function get(path) {
+    return ok(await api.request("GET", path));
+  }
+  async function resolveTeam(query) {
+    const page = await get(`/setup/teams?limit=${TEAM_LIST_LIMIT}`);
+    const q = query.trim().toLowerCase();
+    const byId = page.data.filter((t) => t.id.toLowerCase() === q);
+    const matches = byId.length > 0 ? byId : page.data.filter((t) => t.name.trim().toLowerCase() === q || t.agentType === q);
+    const [only] = matches;
+    if (only && matches.length === 1) return only;
+    if (matches.length > 1) {
+      throw new UserFacingError(
+        `Several teams match "${query}". Use the id:
+${matches.map((t) => `- ${t.name} (id ${t.id})`).join("\n")}`
+      );
+    }
+    throw new UserFacingError(
+      `No team matches "${query}"${page.meta.hasNextPage ? " among the first teams; use its id" : ""}. Call list_teams.`
+    );
+  }
+  async function pulledFolder(folderInput, current) {
+    const folder = resolveFolder(folderInput, cwd);
+    const marker = await readMarker(folder);
+    if (!marker) {
+      throw new UserFacingError(`${folder} is not a team folder from this plugin. Use pull_team or new_team first.`);
+    }
+    if (marker.environment !== env2.name) {
+      throw new UserFacingError(
+        `${folder} was pulled from rightflow ${marker.environment}, but this plugin is set to ${env2.name}. A team only goes back where it came from: switch the environment in /plugin, or pull the ${env2.name} team into its own folder.`
+      );
+    }
+    if (marker.firmId !== current.id) {
+      throw new UserFacingError(
+        `${folder} belongs to ${marker.firmName}, but you are working on ${current.name}. Call use_firm to switch, or pull this firm's team into its own folder.`
+      );
+    }
+    return { folder, marker };
+  }
+  function teamPreviewId(marker, files, absorb) {
+    return digest({
+      env: env2.name,
+      firm: marker.firmId,
+      team: marker.teamId,
+      base: marker.baseHash,
+      files: Object.entries(files).sort(([a], [b]) => a.localeCompare(b)),
+      absorb: [...absorb].sort((a, b) => a.ruleId.localeCompare(b.ruleId))
+    });
+  }
+  async function refresh(folder, marker, submitted, teamId) {
+    try {
+      const now = await readTeamFiles(folder);
+      if (hasChanges(localChanges(hashFiles(submitted), now))) {
+        return `
+The folder changed while submitting, so it was left as it is. Pull the team again before the next change.`;
+      }
+      const bundle = await get(`/setup/teams/${encodeURIComponent(teamId)}/bundle`);
+      await writeTeamFolder(
+        folder,
+        bundle.files,
+        { ...marker, teamId, teamName: bundle.team.name, baseHash: bundle.bundleHash },
+        { replace: true }
+      );
+      return `
+The folder ${folder} now holds the team as it is live.`;
+    } catch (err) {
+      const reason = err instanceof UserFacingError ? err.message : "an unexpected error (details are in the server log)";
+      if (!(err instanceof UserFacingError)) console.error(err);
+      return `
+The change is live, but the folder could not be brought up to date: ${reason}
+Pull the team again with replace: true before the next change.`;
+    }
+  }
+  server2.registerTool(
+    "team_reference",
+    {
+      title: "What a team may use",
+      description: "What rightflow allows in a firm's team right now: tool groups, artifact types, icons, case-field keywords, which settings the firm may change and which rightflow sets, and size limits. Read it before writing or changing a team's settings; never guess these lists.",
+      inputSchema: { lang: external_exports.string().min(2).max(10).optional().describe("Language for labels, e.g. en or de.") },
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    ({ lang }) => run(env2, async () => {
+      const current = await firm();
+      const ref = await get(`/setup/reference${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`);
+      return { firm: current, text: renderReference(ref) };
+    })
+  );
+  server2.registerTool(
+    "list_teams",
+    {
+      title: "List the firm's teams",
+      description: "The firm's case teams, and which of them it may change here (its own) and which rightflow looks after.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    () => run(env2, async () => {
+      const current = await firm();
+      const page = await get(`/setup/teams?limit=${TEAM_LIST_LIMIT}`);
+      if (page.data.length === 0) {
+        return { firm: current, text: "This firm has no case teams yet. new_team starts one." };
+      }
+      const lines = page.data.map(
+        (t) => `- ${t.name} (id ${t.id}) \u2014 ${t.editable ? "the firm's own; can be changed here" : "looked after by rightflow; ask rightflow to hand it over before changing it here"}`
+      );
+      if (page.meta.hasNextPage) lines.push(`Only the first ${page.data.length} are listed; use a team's id for the others.`);
+      return { firm: current, text: lines.join("\n") };
+    })
+  );
+  server2.registerTool(
+    "pull_team",
+    {
+      title: "Load a team into a folder",
+      description: "Downloads one of the firm's own teams into a folder as plain files, to read and change with your normal tools. Refuses a folder that holds unsubmitted changes or another team unless `replace` is true.",
+      inputSchema: {
+        team: teamArg,
+        folder: folderArg.optional().describe("Where to put it. Default: rightflow/<environment>/<team name>."),
+        replace: external_exports.boolean().optional().describe("Overwrite the folder even if it holds unsubmitted changes or another team.")
+      },
+      annotations: { openWorldHint: true }
+    },
+    ({ team, folder, replace }) => run(env2, async () => {
+      const current = await firm();
+      const found = await resolveTeam(team);
+      const bundle = await get(`/setup/teams/${encodeURIComponent(found.id)}/bundle`);
+      const target = resolveFolder(folder ?? defaultFolder(env2, bundle.team.name), cwd);
+      await writeTeamFolder(
+        target,
+        bundle.files,
+        {
+          environment: env2.name,
+          firmId: current.id,
+          firmName: current.name,
+          teamId: bundle.team.id,
+          teamName: bundle.team.name,
+          baseHash: bundle.bundleHash
+        },
+        { replace: replace === true }
+      );
+      const paths = Object.keys(bundle.files).sort();
+      return {
+        firm: current,
+        team: bundle.team,
+        text: `Loaded into ${target} (${paths.length} files):
+${paths.map((p) => `- ${p}`).join("\n")}
+
+Change the files there, then call check_team with this folder.`
+      };
+    })
+  );
+  server2.registerTool(
+    "new_team",
+    {
+      title: "Start a new team",
+      description: "Puts rightflow's starter team into a folder, to shape into a new team of the firm's own. Nothing is created in rightflow until submit_team.",
+      inputSchema: {
+        folder: folderArg.optional().describe("Where to put it. Default: rightflow/<environment>/new-team."),
+        locale: external_exports.string().min(2).max(10).optional().describe("Which starter, as team_reference lists them.")
+      },
+      annotations: { openWorldHint: true }
+    },
+    ({ folder, locale }) => run(env2, async () => {
+      const current = await firm();
+      let chosen = locale;
+      if (!chosen) {
+        const { starterLocales } = await get("/setup/reference");
+        if (starterLocales.length !== 1) {
+          return {
+            firm: current,
+            text: `Choose a starter with \`locale\`: ${starterLocales.join(", ") || "rightflow offers none right now"}.`
+          };
+        }
+        chosen = starterLocales[0];
+      }
+      const starter = await get(`/setup/teams/starter?locale=${encodeURIComponent(chosen ?? "")}`);
+      const target = resolveFolder(folder ?? defaultFolder(env2, "new-team"), cwd);
+      await writeTeamFolder(
+        target,
+        starter.files,
+        { environment: env2.name, firmId: current.id, firmName: current.name, teamId: null, teamName: "new team", baseHash: null },
+        { replace: false }
+      );
+      return {
+        firm: current,
+        text: `The starter (${starter.locale}) is in ${target} (${Object.keys(starter.files).length} files). Give the team its name and description in TEAM.md, shape it, then call check_team with this folder.`
+      };
+    })
+  );
+  server2.registerTool(
+    "check_team",
+    {
+      title: "Check a change",
+      description: "Sends the folder to rightflow without changing anything and shows what rightflow would do: whether it accepts the change, every finding, and every changed file with its diff. Show this to the person before submitting. Returns the preview id submit_team needs.",
+      inputSchema: { folder: folderArg, absorbRules: absorbArg, paths: pathsArg },
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    ({ folder, absorbRules, paths }) => run(env2, async () => {
+      const current = await firm();
+      const { folder: dir, marker } = await pulledFolder(folder, current);
+      const files = await readTeamFiles(dir);
+      const absorb = absorbRules ?? [];
+      const res = marker.teamId === null ? await api.request("POST", "/setup/teams/check", { files }) : await api.request("POST", `/setup/teams/${encodeURIComponent(marker.teamId)}/bundle/check`, {
+        files,
+        baseHash: marker.baseHash,
+        ...absorb.length > 0 ? { absorbRules: absorb } : {}
+      });
+      const check2 = ok(res);
+      const local = localChanges(marker.files, files);
+      const lines = [renderCheck(check2, paths)];
+      if (!hasChanges(local)) lines.unshift("This folder has no changes since it was pulled.");
+      if (check2.ok && !check2.stale) {
+        const id = teamPreviewId(marker, files, absorb);
+        previews.set(id, { baseHash: marker.baseHash });
+        lines.push(
+          "",
+          `Preview id: ${id}`,
+          "Show the person this list of changes. Submit only once they agree, with their own summary as the message."
+        );
+      }
+      return { firm: current, team: marker.teamId ? { name: marker.teamName } : null, text: lines.join("\n") };
+    })
+  );
+  server2.registerTool(
+    "submit_team",
+    {
+      title: "Submit a change",
+      description: "Makes the checked change live and records it in the team's change log with the person's message. Only after the person has seen check_team's answer for exactly this folder and agreed. For a new team, creates it.",
+      inputSchema: { folder: folderArg, message: messageArg, previewId: previewArg, absorbRules: absorbArg },
+      annotations: { destructiveHint: true, openWorldHint: true }
+    },
+    ({ folder, message, previewId, absorbRules }) => run(env2, async () => {
+      const current = await firm();
+      const { folder: dir, marker } = await pulledFolder(folder, current);
+      const files = await readTeamFiles(dir);
+      const absorb = absorbRules ?? [];
+      if (teamPreviewId(marker, files, absorb) !== previewId || !previews.has(previewId)) {
+        throw new UserFacingError(
+          "This is not what the person was shown: the folder or the rules to take in changed since that check, or the check was not run in this session. Call check_team again and show the person its answer."
+        );
+      }
+      const team = marker.teamId ? { name: marker.teamName } : null;
+      if (marker.teamId === null) {
+        const res2 = await api.request("POST", "/setup/teams", { files, message });
+        if (res2.status === 422 || res2.status === 409) return { firm: current, team, text: refusedApply(res2) };
+        const created = ok(res2);
+        previews.delete(previewId);
+        const note2 = await refresh(dir, marker, files, created.teamId);
+        return { firm: current, team: null, text: `Created the team (id ${created.teamId}). Its change log starts here.${note2}` };
+      }
+      const res = await api.request("POST", `/setup/teams/${encodeURIComponent(marker.teamId)}/bundle`, {
+        files,
+        baseHash: marker.baseHash,
+        message,
+        ...absorb.length > 0 ? { absorbRules: absorb } : {}
+      });
+      if (res.status === 422 || res.status === 409) return { firm: current, team, text: refusedApply(res) };
+      const applied = ok(res);
+      previews.delete(previewId);
+      const note = await refresh(dir, marker, files, marker.teamId);
+      return { firm: current, team, text: `${renderApplied(applied)}${note}` };
+    })
+  );
+  server2.registerTool(
+    "team_learnings",
+    {
+      title: "What a team learned",
+      description: "Rules the firm confirmed while working (they apply on top of the team's text), proposals waiting for review in the app, and files a learning changed. A confirmed rule can be written into the text with absorbRules.",
+      inputSchema: { team: teamArg },
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    ({ team }) => run(env2, async () => {
+      const current = await firm();
+      const found = await resolveTeam(team);
+      const learnings = await get(`/setup/teams/${encodeURIComponent(found.id)}/learnings`);
+      return { firm: current, team: found, text: renderLearnings(learnings) };
+    })
+  );
+  server2.registerTool(
+    "team_history",
+    {
+      title: "A team's change log",
+      description: "Who changed the team, when, how and why, newest first.",
+      inputSchema: {
+        team: teamArg,
+        page: external_exports.number().int().min(1).max(1e4).optional(),
+        limit: external_exports.number().int().min(1).max(100).optional()
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    ({ team, page, limit }) => run(env2, async () => {
+      const current = await firm();
+      const found = await resolveTeam(team);
+      const list = await get(
+        `/setup/teams/${encodeURIComponent(found.id)}/revisions?page=${page ?? 1}&limit=${limit ?? 20}`
+      );
+      if (list.data.length === 0) {
+        return {
+          firm: current,
+          team: found,
+          text: page && page > 1 ? "No more entries." : "No changes are recorded yet. The log starts with the next submitted change."
+        };
+      }
+      const lines = list.data.map(renderRevisionLine);
+      if (list.meta.hasNextPage) lines.push(`Older entries: call team_history with page ${(page ?? 1) + 1}.`);
+      lines.push("show_revision shows what one change did.");
+      return { firm: current, team: found, text: lines.join("\n") };
+    })
+  );
+  server2.registerTool(
+    "show_revision",
+    {
+      title: "What one change did",
+      description: "One entry of the team's change log and what it changed compared with the entry before it.",
+      inputSchema: { team: teamArg, number: external_exports.number().int().min(1), paths: pathsArg },
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    ({ team, number: number4, paths }) => run(env2, async () => {
+      const current = await firm();
+      const found = await resolveTeam(team);
+      const detail = await get(`/setup/teams/${encodeURIComponent(found.id)}/revisions/${number4}`);
+      return { firm: current, team: found, text: renderRevision(detail, paths) };
+    })
+  );
+  server2.registerTool(
+    "check_restore",
+    {
+      title: "Check bringing an earlier version back",
+      description: "Shows what bringing the team back to an earlier entry of its change log would change today, checked like any other change. Returns the preview id restore_revision needs.",
+      inputSchema: { team: teamArg, number: external_exports.number().int().min(1), paths: pathsArg },
+      annotations: { readOnlyHint: true, openWorldHint: true }
+    },
+    ({ team, number: number4, paths }) => run(env2, async () => {
+      const current = await firm();
+      const found = await resolveTeam(team);
+      const teamPath = `/setup/teams/${encodeURIComponent(found.id)}`;
+      const { bundleHash } = await get(`${teamPath}/bundle`);
+      const check2 = ok(
+        await api.request("POST", `${teamPath}/revisions/${number4}/restore/check`, { baseHash: bundleHash })
+      );
+      const lines = [`Bringing back #${number4}:`, renderCheck(check2, paths)];
+      if (check2.ok && !check2.stale) {
+        const id = digest({ env: env2.name, firm: current.id, team: found.id, restore: number4, base: bundleHash });
+        previews.set(id, { baseHash: bundleHash });
+        lines.push(
+          "",
+          `Preview id: ${id}`,
+          "Show the person this list. Restore only once they agree, with their own reason as the message."
+        );
+      }
+      return { firm: current, team: found, text: lines.join("\n") };
+    })
+  );
+  server2.registerTool(
+    "restore_revision",
+    {
+      title: "Bring an earlier version back",
+      description: "Brings the team back to an earlier entry of its change log, as a new entry; nothing in the log is rewritten. Only after the person has seen check_restore's answer and agreed.",
+      inputSchema: { team: teamArg, number: external_exports.number().int().min(1), message: messageArg, previewId: previewArg },
+      annotations: { destructiveHint: true, openWorldHint: true }
+    },
+    ({ team, number: number4, message, previewId }) => run(env2, async () => {
+      const current = await firm();
+      const found = await resolveTeam(team);
+      const preview = previews.get(previewId);
+      const expected = preview?.baseHash ? digest({ env: env2.name, firm: current.id, team: found.id, restore: number4, base: preview.baseHash }) : null;
+      if (!preview?.baseHash || expected !== previewId) {
+        throw new UserFacingError(
+          "This is not what the person was shown: that preview was for another team or entry, or was not made in this session. Call check_restore again and show the person its answer."
+        );
+      }
+      const res = await api.request(
+        "POST",
+        `/setup/teams/${encodeURIComponent(found.id)}/revisions/${number4}/restore`,
+        { baseHash: preview.baseHash, message }
+      );
+      if (res.status === 422 || res.status === 409) return { firm: current, team: found, text: refusedApply(res) };
+      const applied = ok(res);
+      previews.delete(previewId);
+      return {
+        firm: current,
+        team: found,
+        text: `${renderApplied(applied)}
+A folder pulled before this is out of date: pull the team again with replace: true.`
+      };
+    })
+  );
+}
+function ok(res) {
+  if (res.status >= 200 && res.status < 300) return res.body;
+  const said = serverMessage(res.body);
+  if (res.status === 404) throw new UserFacingError(said ?? "rightflow does not know that.");
+  throw new UserFacingError(said ?? `rightflow refused this (${res.status}).`);
+}
+function refusedApply(res) {
+  const detail = errorDetail(res.body);
+  if (res.status === 409) {
+    return `${serverMessage(res.body) ?? "The team changed in the meantime."}
+Nothing was changed.`;
+  }
+  return isRecord(detail) ? renderRefusedApply(detail) : serverMessage(res.body) ?? "rightflow did not apply the change.";
+}
+function digest(value) {
+  return createHash3("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
 // src/rightflow-config/server.ts
@@ -37336,7 +38157,7 @@ var version2 = pluginVersion();
 var server = new McpServer(
   { name: "rightflow-config", version: version2 },
   {
-    instructions: "Tools for setting up and changing a firm's own agent team in rightflow. Every answer starts with the environment and firm it is about; say which one when you report results. Call status first when unsure."
+    instructions: "Tools for setting up and changing a firm's own agent team in rightflow. Every answer starts with the environment and firm it is about; say which one when you report results. Call status first when unsure. A change goes: pull_team (or new_team) \u2192 edit the folder \u2192 check_team \u2192 show the person every change \u2192 submit_team with their own summary. rightflow decides what is allowed; report its refusals, never work around them."
   }
 );
 var env = null;
@@ -37352,7 +38173,9 @@ try {
 }
 if (env) {
   const session = new Session(env, new SessionStore(dataDirectory(), env.name), { openBrowser });
-  registerSessionTools(server, { session, api: new Api(session), version: version2 });
+  const api = new Api(session);
+  registerSessionTools(server, { session, api, version: version2 });
+  registerTeamTools(server, { session, api });
 }
 await server.connect(new StdioServerTransport());
 function pluginVersion() {
